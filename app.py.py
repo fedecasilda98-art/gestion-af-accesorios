@@ -5,7 +5,7 @@ from datetime import datetime
 from fpdf import FPDF
 import re
 
-# --- CONFIGURACIÓN E INTERFAZ ---
+# --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Gestión AF Accesorios", layout="wide", initial_sidebar_state="collapsed")
 
 # Archivos Base
@@ -15,13 +15,12 @@ ARCHIVO_MOVIMIENTOS = "movimientos_clientes.csv"
 CARPETA_FOTOS = "fotos_productos" 
 WHATSAPP_NUM = "5493413512049"
 
-# Detectar Modo Cliente (Si la URL tiene ?modo=cliente)
+# Detectar Modo Cliente (URL ?modo=cliente)
 es_cliente = st.query_params.get("modo") == "cliente"
 
-# Crear carpetas si no existen
 if not os.path.exists(CARPETA_FOTOS): os.makedirs(CARPETA_FOTOS)
 
-# --- CARGA DE DATOS ---
+# --- CARGA DE DATOS CON SEGURIDAD ---
 def cargar_datos(archivo, columnas):
     if os.path.exists(archivo):
         try:
@@ -38,7 +37,7 @@ df_clientes = cargar_datos(ARCHIVO_CLIENTES, ["Nombre", "Tel", "Localidad", "Sal
 
 if es_cliente:
     # ---------------------------------------------------------
-    # VISTA EXCLUSIVA CLIENTE (SOBRIA)
+    # VISTA CLIENTE (VIDRIERA)
     # ---------------------------------------------------------
     st.title("🛒 Catálogo AF Accesorios")
     st.info("Precios sin IVA. Consultar disponibilidad por WhatsApp.")
@@ -66,60 +65,62 @@ if es_cliente:
 
 else:
     # ---------------------------------------------------------
-    # VISTA ADMINISTRADOR (FORMATO ORIGINAL CAPTURA)
+    # VISTA ADMINISTRADOR (ESTILO ORIGINAL)
     # ---------------------------------------------------------
-    # Menú superior como el de la foto
     menu = ["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre de Caja"]
     choice = st.tabs(menu)
 
     with choice[0]: # Stock
-        st.header("Inventario")
-        st.dataframe(df_stock, use_container_width=True)
+        st.header("Inventario Actual")
+        st.dataframe(df_stock, use_container_width=True, hide_index=True)
 
     with choice[2]: # Maestro
         st.header("Administración de Precios")
-        df_ed = st.data_editor(df_stock, use_container_width=True)
-        if st.button("Guardar Cambios"):
+        df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True)
+        if st.button("Guardar Cambios Maestro"):
             df_ed.to_csv(ARCHIVO_ARTICULOS, index=False)
             st.success("¡Datos guardados!")
 
-    with choice[3]: # Cta Cte (La de tu foto)
+    with choice[3]: # Cta Cte (CORREGIDO)
         st.header("Gestión de Clientes")
         with st.expander("📝 Alta / Modificación de Cliente"):
             c1, c2 = st.columns(2)
             n = c1.text_input("Nombre")
             t = c2.text_input("Tel")
             l = c1.text_input("Localidad")
-            s = c2.number_input("Saldo", 0.0)
+            s = c2.number_input("Saldo Inicial", 0.0)
             if st.button("Guardar Cliente"):
                 nuevo = pd.DataFrame([[n, t, l, s]], columns=df_clientes.columns)
                 df_clientes = pd.concat([df_clientes, nuevo], ignore_index=True)
                 df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
+                st.success("Cliente guardado")
                 st.rerun()
         
         st.divider()
-        sel_cli = st.selectbox("Cliente:", df_clientes["Nombre"].tolist())
-        saldo_actual = df_clientes[df_clientes["Nombre"] == sel_cli]["Saldo"].values[0]
-        st.subheader(f"Saldo: $ {saldo_actual:,.2f}")
-        
-        with st.expander("💰 Cobrar"):
-            monto = st.number_input("Monto a cobrar", 0.0)
-            if st.button("Registrar Pago"):
-                st.success("Pago registrado")
+        if not df_clientes.empty:
+            sel_cli = st.selectbox("Seleccionar Cliente:", df_clientes["Nombre"].tolist())
+            # Red de seguridad para el error de la imagen:
+            datos_cli = df_clientes[df_clientes["Nombre"] == sel_cli]
+            if not datos_cli.empty:
+                saldo_actual = datos_cli["Saldo"].values[0]
+                st.subheader(f"Saldo de {sel_cli}: $ {saldo_actual:,.2f}")
+            
+            with st.expander("💰 Registrar Movimiento"):
+                monto_mov = st.number_input("Monto", 0.0)
+                if st.button("Aplicar"):
+                    st.info("Movimiento registrado (Simulado)")
+        else:
+            st.warning("No hay clientes cargados en la base de datos.")
 
-    with choice[5]: # Órdenes
-        st.header("Órdenes de Trabajo")
-        st.write("Historial de pedidos confirmados.")
-
-    # --- BARRA LATERAL PARA CARGAR FOTOS ---
+    # --- BARRA LATERAL (Sidebar) ---
     with st.sidebar:
-        st.header("Configuración")
-        st.write("Subí fotos para que el cliente las vea.")
-        art_f = st.selectbox("Producto:", sorted(df_stock["Accesorio"].tolist()))
-        file_f = st.file_uploader("Foto:", type=['jpg', 'png'])
+        st.image(LOGO_PATH) if os.path.exists(LOGO_PATH) else st.write("AF Accesorios")
+        st.header("Configuración de Fotos")
+        art_f = st.selectbox("Producto para vincular foto:", sorted(df_stock["Accesorio"].tolist()))
+        file_f = st.file_uploader("Subir imagen (JPG/PNG)", type=['jpg', 'png'])
         if st.button("Vincular Foto"):
             if file_f:
                 nom = re.sub(r'[^a-zA-Z0-9\s]', '', art_f)
                 with open(os.path.join(CARPETA_FOTOS, f"{nom}.jpg"), "wb") as f:
                     f.write(file_f.getbuffer())
-                st.success("Foto vinculada")
+                st.success(f"Foto vinculada a {art_f}")
