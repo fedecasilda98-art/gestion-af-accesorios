@@ -62,27 +62,31 @@ else:
     menu = ["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre de Caja"]
     choice = st.tabs(menu)
 
-    with choice[0]: # STOCK (MODIFICADO SEGÚN TU PEDIDO)
+    with choice[0]: # STOCK
         st.header("Inventario Actual")
         
         if not df_stock.empty:
-            # Limpieza de datos para cálculos
+            # Limpieza rápida de datos para evitar errores de suma
             df_calc = df_stock.copy()
             for col in ["Stock", "Costo Base", "Flete", "Lista 1 (Cheques)", "Lista 2 (Efectivo)"]:
                 df_calc[col] = pd.to_numeric(df_calc[col], errors='coerce').fillna(0)
 
-            # Cálculos de las tres variantes
-            # 1. Costo + Flete
-            monto_mercaderia = ((df_calc["Costo Base"] * (1 + df_calc["Flete"] / 100)) * df_calc["Stock"]).sum()
-            # 2. Venta Bruta Lista 1
-            venta_lista1 = (df_calc["Lista 1 (Cheques)"] * df_calc["Stock"]).sum()
-            # 3. Venta Bruta Lista 2
-            venta_lista2 = (df_calc["Lista 2 (Efectivo)"] * df_calc["Stock"]).sum()
+            # 1. Importe de Stock (Solo Costo Base)
+            solo_costo_stock = (df_calc["Costo Base"] * df_calc["Stock"]).sum()
+            
+            # 2. Monto con Flete (Para que veas la diferencia)
+            costo_mas_flete = ((df_calc["Costo Base"] * (1 + df_calc["Flete"] / 100)) * df_calc["Stock"]).sum()
+            
+            # 3. Totales de Listas (Venta bruta)
+            total_l1 = (df_calc["Lista 1 (Cheques)"] * df_calc["Stock"]).sum()
+            total_l2 = (df_calc["Lista 2 (Efectivo)"] * df_calc["Stock"]).sum()
 
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Monto Mercadería (Costo+Flete)", f"$ {monto_mercaderia:,.2f}")
-            c2.metric("Total Bruto Lista 1", f"$ {venta_lista1:,.2f}")
-            c3.metric("Total Bruto Lista 2", f"$ {venta_lista2:,.2f}")
+            # Visualización en 4 columnas para que compares
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Stock (Solo Costo)", f"$ {solo_costo_stock:,.2f}")
+            m2.metric("Stock (+ Flete)", f"$ {costo_mas_flete:,.2f}")
+            m3.metric("Total Lista 1", f"$ {total_l1:,.2f}")
+            m4.metric("Total Lista 2", f"$ {total_l2:,.2f}")
             
             st.divider()
         
