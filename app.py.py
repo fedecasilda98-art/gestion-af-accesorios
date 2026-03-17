@@ -64,21 +64,60 @@ else:
     menu = ["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre de Caja"]
     choice = st.tabs(menu)
 
-    with choice[0]: # PESTAÑA STOCK (Cálculos de rentabilidad incorporados)
+    with choice[0]: # PESTAÑA STOCK
         st.header("Análisis de Inventario y Rentabilidad")
+        
         if not df_stock.empty:
+            # 1. CÁLCULOS BASE (Costo con flete incluido)
             df_stock["Costo Real U."] = df_stock["Costo Base"] * (1 + df_stock["Flete"] / 100)
-            df_stock["Inversión Total"] = df_stock["Stock"] * df_stock["Costo Real U."]
+            
+            # Dinero total en mercadería (Costo + Flete)
+            df_stock["Valor Inversión"] = df_stock["Costo Real U."] * df_stock["Stock"]
+            
+            # Ganancias netas por cada lista
             df_stock["Ganancia L1"] = (df_stock["Lista 1 (Cheques)"] - df_stock["Costo Real U."]) * df_stock["Stock"]
             df_stock["Ganancia L2"] = (df_stock["Lista 2 (Efectivo)"] - df_stock["Costo Real U."]) * df_stock["Stock"]
 
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Mercadería (Costo + Flete)", f"$ {df_stock['Inversión Total'].sum():,.2f}")
-            m2.metric("Ganancia Est. (Lista 1)", f"$ {df_stock['Ganancia L1'].sum():,.2f}")
-            m3.metric("Ganancia Est. (Lista 2)", f"$ {df_stock['Ganancia L2'].sum():,.2f}")
-            st.divider()
-            st.dataframe(df_stock[["Rubro", "Accesorio", "Stock", "Costo Real U.", "Inversión Total", "Ganancia L1", "Ganancia L2"]], use_container_width=True, hide_index=True)
+            # 2. TABLERO DE TRES VARIANTES
+            v1, v2, v3 = st.columns(3)
+            
+            # Variante 1: Costos + Fletes
+            v1.metric(
+                label="Costos + Fletes", 
+                value=f"$ {df_stock['Valor Inversión'].sum():,.2f}",
+                help="Suma total de (Costo Base + Flete) de todos los productos en stock."
+            )
+            
+            # Variante 2: Ganancia Lista 1
+            v2.metric(
+                label="Ganancia Lista 1", 
+                value=f"$ {df_stock['Ganancia L1'].sum():,.2f}",
+                delta="Cheques",
+                delta_color="normal"
+            )
+            
+            # Variante 3: Ganancia Lista 2
+            v3.metric(
+                label="Ganancia Lista 2", 
+                value=f"$ {df_stock['Ganancia L2'].sum():,.2f}",
+                delta="Efectivo",
+                delta_color="normal"
+            )
 
+            st.divider()
+
+            # 3. TABLA DE CONTROL DETALLADA
+            st.subheader("Desglose de Valores")
+            st.dataframe(
+                df_stock[[
+                    "Rubro", "Accesorio", "Stock", "Costo Real U.", 
+                    "Valor Inversión", "Ganancia L1", "Ganancia L2"
+                ]], 
+                use_container_width=True, 
+                hide_index=True
+            )
+        else:
+            st.warning("No hay datos en el stock para calcular las variantes.")
     with choice[1]: # PESTAÑA LOTE (Columnas ordenadas según pedido)
         st.header("🚚 Carga por Lote")
         df_lote_base = pd.DataFrame(columns=["articulo", "rubro", "cantidad", "costos", "flete", "articulo existente/nuevo"])
