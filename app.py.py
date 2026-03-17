@@ -39,7 +39,6 @@ if "carrito" not in st.session_state:
 # --- LÓGICA DE INTERFAZ ---
 
 if es_cliente:
-    # Vista Cliente (Se mantiene igual)
     st.title("🛒 Catálogo AF Accesorios")
     busqueda = st.text_input("Buscar producto...", "").upper()
     df_ver = df_stock[df_stock["Accesorio"].str.contains(busqueda, na=False)]
@@ -62,34 +61,28 @@ else:
     menu = ["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre de Caja"]
     choice = st.tabs(menu)
 
-    with choice[0]: # STOCK
+    with choice[0]: # PESTAÑA STOCK ÚNICA
         st.header("Inventario Actual")
         
         if not df_stock.empty:
-            # Limpieza rápida de datos para evitar errores de suma
+            # Limpieza para cálculos
             df_calc = df_stock.copy()
-            for col in ["Stock", "Costo Base", "Flete", "Lista 1 (Cheques)", "Lista 2 (Efectivo)"]:
+            for col in ["Stock", "Costo Base", "Lista 1 (Cheques)", "Lista 2 (Efectivo)"]:
                 df_calc[col] = pd.to_numeric(df_calc[col], errors='coerce').fillna(0)
 
-            # 1. Importe de Stock (Solo Costo Base)
-            solo_costo_stock = (df_calc["Costo Base"] * df_calc["Stock"]).sum()
-            
-            # 2. Monto con Flete (Para que veas la diferencia)
-            costo_mas_flete = ((df_calc["Costo Base"] * (1 + df_calc["Flete"] / 100)) * df_calc["Stock"]).sum()
-            
-            # 3. Totales de Listas (Venta bruta)
+            # Las 3 sumas que pediste
+            total_costo = (df_calc["Costo Base"] * df_calc["Stock"]).sum()
             total_l1 = (df_calc["Lista 1 (Cheques)"] * df_calc["Stock"]).sum()
             total_l2 = (df_calc["Lista 2 (Efectivo)"] * df_calc["Stock"]).sum()
 
-            # Visualización en 4 columnas para que compares
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Stock (Solo Costo)", f"$ {solo_costo_stock:,.2f}")
-            m2.metric("Stock (+ Flete)", f"$ {costo_mas_flete:,.2f}")
-            m3.metric("Total Lista 1", f"$ {total_l1:,.2f}")
-            m4.metric("Total Lista 2", f"$ {total_l2:,.2f}")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Importe Stock (Costo)", f"$ {total_costo:,.2f}")
+            c2.metric("Total Lista 1", f"$ {total_l1:,.2f}")
+            c3.metric("Total Lista 2", f"$ {total_l2:,.2f}")
             
             st.divider()
         
+        # Tabla de abajo
         st.dataframe(df_stock, use_container_width=True, hide_index=True)
 
     with choice[1]: # LOTE
@@ -111,9 +104,9 @@ else:
         col_c1, col_c2 = st.columns([1, 2])
         with col_c1:
             st.subheader("Nuevo Cliente")
-            n_cli = st.text_input("Nombre")
-            t_cli = st.text_input("Teléfono")
-            l_cli = st.text_input("Localidad")
+            n_cli = st.text_input("Nombre", key="n_cli_reg")
+            t_cli = st.text_input("Teléfono", key="t_cli_reg")
+            l_cli = st.text_input("Localidad", key="l_cli_reg")
             if st.button("Registrar Cliente"):
                 nuevo = pd.DataFrame([[n_cli, t_cli, l_cli, 0.0]], columns=df_clientes.columns)
                 pd.concat([df_clientes, nuevo]).to_csv(ARCHIVO_CLIENTES, index=False)
@@ -121,11 +114,11 @@ else:
         with col_c2:
             st.subheader("Buscador de Saldos")
             if not df_clientes.empty:
-                sel_cli = st.selectbox("Seleccionar Cliente:", df_clientes["Nombre"].tolist())
+                sel_cli = st.selectbox("Seleccionar Cliente:", df_clientes["Nombre"].tolist(), key="sel_cli_vista")
                 saldo = df_clientes[df_clientes["Nombre"] == sel_cli]["Saldo"].values[0]
                 st.metric(f"Saldo de {sel_cli}", f"$ {saldo:,.2f}")
                 
-                monto_pago = st.number_input("Registrar Pago/Entrega $:", min_value=0.0)
+                monto_pago = st.number_input("Registrar Pago/Entrega $:", min_value=0.0, key="pago_cli")
                 if st.button("Confirmar Pago"):
                     df_clientes.loc[df_clientes["Nombre"] == sel_cli, "Saldo"] -= monto_pago
                     df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
@@ -134,15 +127,15 @@ else:
 
     with choice[4]: # PRESUPUESTADOR
         st.header("📄 Generador de Presupuestos")
-        cliente_p = st.selectbox("Seleccionar Cliente para el presupuesto:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"])
+        cliente_p = st.selectbox("Seleccionar Cliente para el presupuesto:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cli_presu")
         st.divider()
         col_p1, col_p2, col_p3 = st.columns([2, 1, 1])
         with col_p1:
-            item_p = st.selectbox("Seleccionar Artículo:", df_stock["Accesorio"].tolist())
+            item_p = st.selectbox("Seleccionar Artículo:", df_stock["Accesorio"].tolist(), key="item_presu")
         with col_p2:
-            cant_p = st.number_input("Cant:", min_value=1, value=1)
+            cant_p = st.number_input("Cant:", min_value=1, value=1, key="cant_presu")
         with col_p3:
-            lista_p = st.selectbox("Lista:", ["Lista 1 (Cheques)", "Lista 2 (Efectivo)"])
+            lista_p = st.selectbox("Lista:", ["Lista 1 (Cheques)", "Lista 2 (Efectivo)"], key="lista_presu")
 
         if st.button("Agregar al Presupuesto"):
             precio_u = df_stock[df_stock["Accesorio"] == item_p][lista_p].values[0]
@@ -165,10 +158,10 @@ else:
     with choice[6]: # CIERRE DE CAJA
         st.header("🏁 Cierre de Caja")
         col_z1, col_z2 = st.columns(2)
-        total_stock = (df_stock["Stock"] * df_stock["Costo Base"]).sum()
+        total_stock_c = (df_stock["Stock"] * df_stock["Costo Base"]).sum()
         total_deuda = df_clientes["Saldo"].sum()
         
-        col_z1.metric("Valor del Stock (Costo)", f"$ {total_stock:,.2f}")
+        col_z1.metric("Valor del Stock (Costo)", f"$ {total_stock_c:,.2f}")
         col_z2.metric("Total Deuda Clientes", f"$ {total_deuda:,.2f}")
         
         st.subheader("Últimos Movimientos")
