@@ -68,40 +68,42 @@ with choice[0]: # PESTAÑA STOCK
         st.header("Análisis de Inventario")
         
         if not df_stock.empty:
-            # 1. CÁLCULOS DIRECTOS (Suma de toda la mercadería)
-            # Valor Real: (Costo Base + Flete) * Stock
-            valor_real_total = ((df_stock["Costo Base"] * (1 + df_stock["Flete"] / 100)) * df_stock["Stock"]).sum()
+            # 1. CÁLCULOS DIRECTOS (Respetando costos y listas)
+            # Valor Real: Suma de (Costo Base + % Flete) multiplicado por el Stock de cada uno
+            df_stock["Aux_Valor_Real"] = (df_stock["Costo Base"] * (1 + df_stock["Flete"] / 100)) * df_stock["Stock"]
+            valor_real_total = df_stock["Aux_Valor_Real"].sum()
             
-            # Valor en Lista 1: Precio Lista 1 * Stock
+            # Valor Lista 1: Suma de (Precio Lista 1 * Stock)
             valor_lista1_total = (df_stock["Lista 1 (Cheques)"] * df_stock["Stock"]).sum()
             
-            # Valor en Lista 2: Precio Lista 2 * Stock
-            valor_lista2_total = (df_stock["Lista 2 (Efectivo)"] - df_stock["Stock"]).sum()
+            # Valor Lista 2: Suma de (Precio Lista 2 * Stock)
+            # CORREGIDO: Se cambió el '-' por '*' para que multiplique precio por cantidad
+            valor_lista2_total = (df_stock["Lista 2 (Efectivo)"] * df_stock["Stock"]).sum()
 
-            # 2. LAS TRES VARIANTES (Métricas principales)
+            # 2. LAS TRES VARIANTES
             v1, v2, v3 = st.columns(3)
             
             v1.metric(
-                label="Valor Real Mercadería", 
+                label="Costos + Fletes (Capital)", 
                 value=f"$ {valor_real_total:,.2f}",
-                help="Suma de (Costo + Flete) de todo lo que hay en el local."
+                help="Es el dinero total que invertiste para tener esta mercadería."
             )
             
             v2.metric(
                 label="Total Lista 1 (Cheques)", 
                 value=f"$ {valor_lista1_total:,.2f}",
-                help="Lo que recaudarías vendiendo todo a precio de Lista 1."
+                help="Total de dinero si vendieras todo a precio de Lista 1."
             )
             
             v3.metric(
                 label="Total Lista 2 (Efectivo)", 
                 value=f"$ {valor_lista2_total:,.2f}",
-                help="Lo que recaudarías vendiendo todo a precio de Lista 2."
+                help="Total de dinero si vendieras todo a precio de Lista 2."
             )
 
             st.divider()
 
-            # 3. TABLA SIMPLE
+            # 3. TABLA SIMPLE (Sin columnas auxiliares para no marear)
             st.subheader("Detalle de Inventario")
             st.dataframe(
                 df_stock[["Rubro", "Accesorio", "Stock", "Costo Base", "Flete", "Lista 1 (Cheques)", "Lista 2 (Efectivo)"]], 
@@ -110,19 +112,6 @@ with choice[0]: # PESTAÑA STOCK
             )
         else:
             st.warning("No hay artículos cargados para calcular los totales.")
-
-            # 3. TABLA DE CONTROL DETALLADA
-            st.subheader("Desglose de Valores")
-            st.dataframe(
-                df_stock[[
-                    "Rubro", "Accesorio", "Stock", "Costo Real U.", 
-                    "Valor Inversión", "Ganancia L1", "Ganancia L2"
-                ]], 
-                use_container_width=True, 
-                hide_index=True
-            )
-        else:
-            st.warning("No hay datos en el stock para calcular las variantes.")
     with choice[1]: # PESTAÑA LOTE (Columnas ordenadas según pedido)
         st.header("🚚 Carga por Lote")
         df_lote_base = pd.DataFrame(columns=["articulo", "rubro", "cantidad", "costos", "flete", "articulo existente/nuevo"])
