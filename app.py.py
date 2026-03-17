@@ -62,9 +62,51 @@ else:
     menu = ["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre de Caja"]
     choice = st.tabs(menu)
 
-    with choice[0]: # STOCK
-        st.header("Inventario Actual")
-        st.dataframe(df_stock, use_container_width=True, hide_index=True)
+    with choice[0]: # PESTAÑA STOCK
+        st.header("Análisis de Inventario y Rentabilidad")
+        
+        # 1. CÁLCULOS FINANCIEROS
+        # Dinero total en costo (Stock * Costo Base)
+        df_stock["Total Costo"] = df_stock["Stock"] * df_stock["Costo Base"]
+        
+        # Ganancia potencial Lista 1 (Cheques)
+        df_stock["Ganancia L1"] = (df_stock["Lista 1 (Cheques)"] - df_stock["Costo Base"]) * df_stock["Stock"]
+        
+        # Ganancia potencial Lista 2 (Efectivo)
+        df_stock["Ganancia L2"] = (df_stock["Lista 2 (Efectivo)"] - df_stock["Costo Base"]) * df_stock["Stock"]
+
+        # 2. INDICADORES SUPERIORES
+        c1, c2, c3 = st.columns(3)
+        total_inversion = df_stock["Total Costo"].sum()
+        total_ganancia_l1 = df_stock["Ganancia L1"].sum()
+        total_ganancia_l2 = df_stock["Ganancia L2"].sum()
+
+        c1.metric("Inversión Total (Costo)", f"$ {total_inversion:,.2f}")
+        c2.metric("Ganancia Potencial (Lista 1)", f"$ {total_ganancia_l1:,.2f}", delta="Cheques")
+        c3.metric("Ganancia Potencial (Lista 2)", f"$ {total_ganancia_l2:,.2f}", delta="Efectivo", delta_color="normal")
+
+        st.divider()
+
+        # 3. TABLA DETALLADA
+        st.subheader("Detalle por Artículo")
+        # Mostramos la tabla con las nuevas columnas de análisis
+        st.dataframe(
+            df_stock[[
+                "Rubro", "Accesorio", "Stock", "Costo Base", 
+                "Lista 1 (Cheques)", "Lista 2 (Efectivo)", 
+                "Total Costo", "Ganancia L1", "Ganancia L2"
+            ]], 
+            use_container_width=True, 
+            hide_index=True
+        )
+        
+        # Botón opcional para descargar este análisis en Excel/CSV
+        st.download_button(
+            label="📥 Descargar Reporte de Valor de Stock",
+            data=df_stock.to_csv(index=False).encode('utf-8'),
+            file_name=f"valor_stock_{datetime.now().strftime('%d_%m_%Y')}.csv",
+            mime="text/csv",
+        )
 
     with choice[1]: # LOTE (COMO TE GUSTÓ)
         st.header("🚚 Carga por Lote")
