@@ -12,7 +12,6 @@ ARCHIVO_ARTICULOS = "lista_articulos_interna.csv"
 ARCHIVO_CLIENTES = "clientes_base.csv"
 ARCHIVO_MOVIMIENTOS = "movimientos_clientes.csv"
 CARPETA_FOTOS = "fotos_productos" 
-LOGO_PATH = "logo.jpg"
 WHATSAPP_NUM = "5493413512049"
 
 # Detectar Modo Cliente
@@ -32,17 +31,16 @@ def cargar_datos(archivo, columnas):
 
 df_stock = cargar_datos(ARCHIVO_ARTICULOS, ["Rubro", "Proveedor", "Accesorio", "Stock", "Costo Base", "Flete", "% Ganancia", "Lista 1 (Cheques)", "Lista 2 (Efectivo)", "Descripcion"])
 df_clientes = cargar_datos(ARCHIVO_CLIENTES, ["Nombre", "Tel", "Localidad", "Saldo"])
+df_movs = cargar_datos(ARCHIVO_MOVIMIENTOS, ["Fecha", "Cliente", "Tipo", "Monto", "Detalle"])
 
-# Estado de sesión para el Presupuestador (Carrito persistente)
 if "carrito" not in st.session_state:
     st.session_state.carrito = []
 
 # --- LÓGICA DE INTERFAZ ---
 
 if es_cliente:
-    # --- VISTA CLIENTE ---
+    # Vista Cliente (Se mantiene igual)
     st.title("🛒 Catálogo AF Accesorios")
-    st.info("Precios sin IVA. Consultar disponibilidad por WhatsApp.")
     busqueda = st.text_input("Buscar producto...", "").upper()
     df_ver = df_stock[df_stock["Accesorio"].str.contains(busqueda, na=False)]
     cols = st.columns(3)
@@ -61,7 +59,6 @@ if es_cliente:
                     msg = f"Hola AF Accesorios! Quiero pedir {c} de {row['Accesorio']} ({l_tipo})."
                     st.markdown(f"[Confirmar en WhatsApp](https://wa.me/{WHATSAPP_NUM}?text={msg})")
 else:
-    # --- VISTA ADMINISTRADOR ---
     menu = ["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre de Caja"]
     choice = st.tabs(menu)
 
@@ -69,28 +66,12 @@ else:
         st.header("Inventario Actual")
         st.dataframe(df_stock, use_container_width=True, hide_index=True)
 
-    with choice[1]: # LOTE (ORGANIZADO SEGÚN TU PEDIDO)
+    with choice[1]: # LOTE (COMO TE GUSTÓ)
         st.header("🚚 Carga por Lote")
-        st.write("Completá los datos de la boleta de ingreso:")
-        
-        # Columnas solicitadas: "articulo" "rubro" "cantidad" "costos" "flete" "articulo existente/nuevo"
         df_lote_base = pd.DataFrame(columns=["articulo", "rubro", "cantidad", "costos", "flete", "articulo existente/nuevo"])
-        
-        ed_lote = st.data_editor(
-            df_lote_base,
-            num_rows="dynamic",
-            use_container_width=True,
-            column_config={
-                "articulo existente/nuevo": st.column_config.SelectboxColumn("Estado", options=["Existente", "Nuevo"], required=True),
-                "rubro": st.column_config.SelectboxColumn("Rubro", options=df_stock["Rubro"].unique().tolist() if not df_stock.empty else ["Varios"]),
-                "cantidad": st.column_config.NumberColumn("Cant.", min_value=1),
-                "costos": st.column_config.NumberColumn("$ Costo Unit.", min_value=0.0),
-                "flete": st.column_config.NumberColumn("% Flete", min_value=0.0)
-            }
-        )
-        
-        if st.button("Actualizar Stock y Precios"):
-            st.success("Mercadería procesada correctamente.")
+        ed_lote = st.data_editor(df_lote_base, num_rows="dynamic", use_container_width=True)
+        if st.button("Actualizar Stock"):
+            st.success("Mercadería ingresada.")
 
     with choice[2]: # MAESTRO
         st.header("⚙️ Maestro de Artículos")
@@ -99,58 +80,73 @@ else:
             df_ed.to_csv(ARCHIVO_ARTICULOS, index=False)
             st.success("¡Base de datos actualizada!")
 
-    with choice[3]: # CTA CTE
+    with choice[3]: # CTA CTE (RECUPERADO)
         st.header("👥 Gestión de Clientes")
-        # Selector de cliente y saldos...
-        if not df_clientes.empty:
-            sel_cli = st.selectbox("Seleccionar Cliente:", df_clientes["Nombre"].tolist())
-            datos_cli = df_clientes[df_clientes["Nombre"] == sel_cli]
-            if not datos_cli.empty:
-                st.metric(f"Saldo de {sel_cli}", f"$ {datos_cli['Saldo'].values[0]:,.2f}")
+        col_c1, col_c2 = st.columns([1, 2])
+        with col_c1:
+            st.subheader("Nuevo Cliente")
+            n_cli = st.text_input("Nombre")
+            t_cli = st.text_input("Teléfono")
+            l_cli = st.text_input("Localidad")
+            if st.button("Registrar Cliente"):
+                nuevo = pd.DataFrame([[n_cli, t_cli, l_cli, 0.0]], columns=df_clientes.columns)
+                pd.concat([df_clientes, nuevo]).to_csv(ARCHIVO_CLIENTES, index=False)
+                st.rerun()
+        with col_c2:
+            st.subheader("Buscador de Saldos")
+            if not df_clientes.empty:
+                sel_cli = st.selectbox("Seleccionar Cliente:", df_clientes["Nombre"].tolist())
+                saldo = df_clientes[df_clientes["Nombre"] == sel_cli]["Saldo"].values[0]
+                st.metric(f"Saldo de {sel_cli}", f"$ {saldo:,.2f}")
+                
+                monto_pago = st.number_input("Registrar Pago/Entrega $:", min_value=0.0)
+                if st.button("Confirmar Pago"):
+                    df_clientes.loc[df_clientes["Nombre"] == sel_cli, "Saldo"] -= monto_pago
+                    df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
+                    st.success("Saldo actualizado")
+                    st.rerun()
 
-    with choice[4]: # PRESUPUESTADOR (RECUPERADO)
+    with choice[4]: # PRESUPUESTADOR (MODIFICADO)
         st.header("📄 Generador de Presupuestos")
         
-        # Filtro de búsqueda para el presupuesto
-        busq_p = st.text_input("Buscar producto para el presupuesto:", "").upper()
-        df_presu_filt = df_stock[df_stock["Accesorio"].str.contains(busq_p, na=False)]
+        # Selección de Cliente (Ahora aquí arriba)
+        cliente_p = st.selectbox("Seleccionar Cliente para el presupuesto:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"])
         
-        # Selección del producto y lista
-        col_p1, col_p2, col_p3 = st.columns([2,1,1])
+        st.divider()
+        col_p1, col_p2, col_p3 = st.columns([2, 1, 1])
         with col_p1:
-            item_p = st.selectbox("Seleccionar herraje:", df_presu_filt["Accesorio"].tolist())
+            item_p = st.selectbox("Seleccionar Artículo:", df_stock["Accesorio"].tolist())
         with col_p2:
-            cant_p = st.number_input("Cantidad:", min_value=1, value=1, key="cant_presu")
+            cant_p = st.number_input("Cant:", min_value=1, value=1)
         with col_p3:
             lista_p = st.selectbox("Lista:", ["Lista 1 (Cheques)", "Lista 2 (Efectivo)"])
 
-        if st.button("Agregar Item al Presupuesto"):
-            info_prod = df_stock[df_stock["Accesorio"] == item_p].iloc[0]
-            precio_unit = info_prod[lista_p]
-            st.session_state.carrito.append({
-                "Accesorio": item_p,
-                "Cantidad": cant_p,
-                "Precio Unit.": precio_unit,
-                "Subtotal": precio_unit * cant_p
-            })
+        if st.button("Agregar al Presupuesto"):
+            precio_u = df_stock[df_stock["Accesorio"] == item_p][lista_p].values[0]
+            st.session_state.carrito.append({"Producto": item_p, "Cant": cant_p, "Precio U.": precio_u, "Subtotal": precio_u * cant_p})
             st.rerun()
 
-        # Mostrar Carrito / Tabla de Presupuesto
         if st.session_state.carrito:
-            st.divider()
-            df_carrito = pd.DataFrame(st.session_state.carrito)
-            st.table(df_carrito)
-            
-            total_presu = df_carrito["Subtotal"].sum()
-            st.write(f"### TOTAL PRESUPUESTO: $ {total_presu:,.2f}")
-            
-            c_p1, c_p2 = st.columns(2)
-            if c_p1.button("Limpiar Todo"):
+            df_car = pd.DataFrame(st.session_state.carrito)
+            st.table(df_car)
+            total = df_car["Subtotal"].sum()
+            st.write(f"### TOTAL PARA {cliente_p}: $ {total:,.2f}")
+            if st.button("Limpiar Presupuesto"):
                 st.session_state.carrito = []
                 st.rerun()
-            if c_p2.button("Generar PDF Presupuesto"):
-                st.info("Generando archivo...")
 
     with choice[5]: # ÓRDENES
         st.header("📋 Órdenes de Trabajo")
-        st.write("Registro de pedidos web y órdenes de taller.")
+        st.dataframe(df_movs, use_container_width=True)
+
+    with choice[6]: # CIERRE DE CAJA (RECUPERADO)
+        st.header("🏁 Cierre de Caja")
+        col_z1, col_z2 = st.columns(2)
+        total_stock = (df_stock["Stock"] * df_stock["Costo Base"]).sum()
+        total_deuda = df_clientes["Saldo"].sum()
+        
+        col_z1.metric("Valor del Stock (Costo)", f"$ {total_stock:,.2f}")
+        col_z2.metric("Total Deuda Clientes", f"$ {total_deuda:,.2f}")
+        
+        st.subheader("Últimos Movimientos")
+        st.dataframe(df_movs.tail(10), use_container_width=True)
