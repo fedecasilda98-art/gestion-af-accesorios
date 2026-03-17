@@ -18,7 +18,24 @@ WHATSAPP_NUM = "5493413512049"
 # Detectar Modo Cliente
 es_cliente = st.query_params.get("modo") == "cliente"
 
-if not os.path.exists(CARPETA_FOTOS): os.makedirs(CARPETA_FOTOS)
+# --- CLASE PARA GENERAR EL PDF CON LOGO ---
+class PDF(FPDF):
+    def header(self):
+        # Intentar cargar el logo.jpg
+        try:
+            # Esta línea inserta tu imagen. 
+            # 'logo.jpg' debe ser el nombre exacto del archivo en tu carpeta.
+            self.image('logo.jpg', 10, 8, 30) 
+        except:
+            # Si el archivo no existe o el nombre es distinto, 
+            # el programa sigue funcionando sin el logo.
+            pass
+        
+        self.set_font("Helvetica", "B", 16)
+        # Desplazamos el texto a la derecha (35mm) para que no pise el logo
+        self.cell(35) 
+        self.cell(0, 10, "ACCESORIOS DE ALUMINIO", ln=True)
+        self.ln(10)
 
 # --- CARGA DE DATOS ---
 def cargar_datos(archivo, columnas):
