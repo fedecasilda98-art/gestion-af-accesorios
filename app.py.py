@@ -37,17 +37,19 @@ df_movs = cargar_datos(ARCHIVO_MOVIMIENTOS, ["Fecha", "Cliente", "Tipo", "Monto"
 if "carrito" not in st.session_state:
     st.session_state.carrito = []
 
-# --- FUNCIONES DE EXPORTACIÓN ---
-def generar_html_presupuesto(cliente, carrito, total, lista_tipo):
-    fecha = datetime.now().strftime("%d/%m/%Y")
+# --- FUNCIÓN DE FORMATO PDF (SEGÚN TU MODELO) ---
+def generar_html_presupuesto(cliente, carrito, total):
+    # Formato de fecha exacto al modelo: 16/03/2026 15:24
+    fecha_formateada = datetime.now().strftime("%d/%m/%Y %H:%M") [cite: 3]
+    
     filas_tabla = ""
     for item in carrito:
         filas_tabla += f"""
         <tr>
-            <td>{item['Producto']}</td>
-            <td style="text-align:center;">{item['Cant']}</td>
-            <td style="text-align:right;">$ {item['Precio U.']:,.2f}</td>
-            <td style="text-align:right;">$ {item['Subtotal']:,.2f}</td>
+            <td style="border: none; padding: 8px;">{item['Producto']}</td>
+            <td style="border: none; padding: 8px; text-align: center;">{item['Cant']}</td>
+            <td style="border: none; padding: 8px; text-align: right;">$ {item['Precio U.']:,.2f}</td>
+            <td style="border: none; padding: 8px; text-align: right;">$ {item['Subtotal']:,.2f}</td>
         </tr>
         """
     
@@ -55,55 +57,56 @@ def generar_html_presupuesto(cliente, carrito, total, lista_tipo):
     <html>
     <head>
         <style>
-            body {{ font-family: sans-serif; color: #333; }}
-            .header {{ text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; }}
-            .info {{ margin: 20px 0; }}
-            table {{ width: 100%; border-collapse: collapse; }}
-            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-            th {{ background-color: #f2f2f2; }}
-            .total {{ text-align: right; font-size: 1.2em; margin-top: 20px; font-weight: bold; }}
-            .footer {{ margin-top: 30px; font-size: 0.8em; text-align: center; color: #777; }}
+            body {{ font-family: 'Helvetica', sans-serif; padding: 40px; color: #000; }}
+            .header {{ margin-bottom: 20px; }}
+            .title-box {{ font-weight: bold; font-size: 24px; margin-bottom: 5px; }}
+            .subtitle-box {{ font-size: 14px; margin-bottom: 30px; border-bottom: 1px solid #000; padding-bottom: 10px; }}
+            .client-info {{ margin-bottom: 20px; font-size: 16px; }}
+            .presu-label {{ font-weight: bold; font-size: 20px; text-align: center; margin-top: 30px; margin-bottom: 20px; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
+            th {{ border-bottom: 2px solid #000; border-top: 2px solid #000; padding: 10px; text-align: left; background-color: #fff; }}
+            .total-row {{ font-weight: bold; font-size: 18px; }}
+            .total-label {{ text-align: right; padding-right: 20px; }}
         </style>
     </head>
     <body>
         <div class="header">
-            <h1>AF ACCESORIOS</h1>
-            <p>Herrajes y Accesorios para Aluminio</p>
+            <div class="title-box">ACCESORIOS DE ALUMINIO</div> 
         </div>
-        <div class="info">
-            <p><strong>Fecha:</strong> {fecha}</p>
-            <p><strong>Cliente:</strong> {cliente}</p>
-            <p><strong>Condición:</strong> {lista_tipo}</p>
+        
+        <div class="client-info">
+            <strong>Cliente:</strong> {cliente}<br> [cite: 2]
+            <strong>Fecha:</strong> {fecha_formateada} [cite: 3]
         </div>
+
+        <div class="presu-label">PRESUPUESTO</div> [cite: 4]
+
         <table>
             <thead>
                 <tr>
-                    <th>Descripción</th>
-                    <th>Cant.</th>
-                    <th>P. Unitario</th>
-                    <th>Subtotal</th>
+                    <th style="text-align: left;">Articulo</th> 
+                    <th style="text-align: center;">Cant.</th> 
+                    <th style="text-align: right;">P. Unit</th> 
+                    <th style="text-align: right;">Subtotal</th> 
                 </tr>
             </thead>
             <tbody>
                 {filas_tabla}
+                <tr>
+                    <td colspan="2" style="border-top: 2px solid #000;"></td>
+                    <td class="total-label" style="border-top: 2px solid #000; padding: 10px;">TOTAL:</td> 
+                    <td style="border-top: 2px solid #000; text-align: right; padding: 10px; font-weight: bold;">$ {total:,.2f}</td> 
+                </tr>
             </tbody>
         </table>
-        <div class="total">
-            TOTAL: $ {total:,.2f}
-        </div>
-        <div class="footer">
-            <p>Presupuesto válido por 5 días. Contacto: {WHATSAPP_NUM}</p>
-            <p>¡Gracias por elegirnos!</p>
-        </div>
     </body>
     </html>
     """
     return html
 
-# --- LÓGICA DE INTERFAZ ---
+# --- LÓGICA DE INTERFAZ (RESTO DEL CÓDIGO INTACTO) ---
 
 if es_cliente:
-    # (Se mantiene igual que antes)
     st.title("🛒 Catálogo AF Accesorios")
     busqueda = st.text_input("Buscar producto...", "").upper()
     df_ver = df_stock[df_stock["Accesorio"].str.contains(busqueda, na=False)]
@@ -181,7 +184,7 @@ else:
                     st.success("Saldo actualizado")
                     st.rerun()
 
-    with choice[4]: # PRESUPUESTADOR MEJORADO
+    with choice[4]: # PRESUPUESTADOR (DISEÑO PDF ACTUALIZADO)
         st.header("📄 Generador de Presupuestos")
         cliente_p = st.selectbox("Seleccionar Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cli_presu")
         st.divider()
@@ -207,31 +210,23 @@ else:
             cp1, cp2, cp3 = st.columns(3)
             
             with cp1:
-                # BOTÓN DESCARGAR
-                html_res = generar_html_presupuesto(cliente_p, st.session_state.carrito, total, lista_p)
+                html_res = generar_html_presupuesto(cliente_p, st.session_state.carrito, total)
                 b64 = base64.b64encode(html_res.encode()).decode()
                 href = f'<a href="data:text/html;base64,{b64}" download="presupuesto_{cliente_p}.html" style="text-decoration:none;"><button style="width:100%; height:40px; border-radius:5px; background-color:#F0F2F6; border:1px solid #dcdde1; cursor:pointer;">📥 Descargar Presupuesto</button></a>'
                 st.markdown(href, unsafe_allow_html=True)
 
             with cp2:
-                # BOTÓN ORDEN DE TRABAJO
                 if st.button("✅ Confirmar Orden de Trabajo", use_container_width=True):
-                    # 1. Descontar Stock y 2. Actualizar Saldo
                     for item in st.session_state.carrito:
                         df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] -= item["Cant"]
-                    
                     if cliente_p != "Consumidor Final":
                         df_clientes.loc[df_clientes["Nombre"] == cliente_p, "Saldo"] += total
                         df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
-                    
                     df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
-                    
-                    # Registrar Movimiento
                     nuevo_mov = pd.DataFrame([[datetime.now().strftime("%d/%m/%Y"), cliente_p, "VENTA", total, f"Venta de {len(st.session_state.carrito)} items"]], columns=df_movs.columns)
                     pd.concat([df_movs, nuevo_mov]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
-                    
                     st.session_state.carrito = []
-                    st.success("Orden Procesada: Stock descontado y Saldo actualizado.")
+                    st.success("Orden Procesada.")
                     st.rerun()
 
             with cp3:
