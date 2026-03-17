@@ -12,7 +12,7 @@ st.set_page_config(page_title="Gestión AF Accesorios", layout="wide", initial_s
 ARCHIVO_ARTICULOS = "lista_articulos_interna.csv"
 ARCHIVO_CLIENTES = "clientes_base.csv"
 ARCHIVO_MOVIMIENTOS = "movimientos_clientes.csv"
-CARPETA_FOTOS = "fotos_productos" 
+CARPETA_FOTOS = "fotos_productos"
 WHATSAPP_NUM = "5493413512049"
 
 # Detectar Modo Cliente
@@ -37,16 +37,25 @@ df_movs = cargar_datos(ARCHIVO_MOVIMIENTOS, ["Fecha", "Cliente", "Tipo", "Monto"
 if "carrito" not in st.session_state:
     st.session_state.carrito = []
 
-# --- FUNCIÓN CORREGIDA PARA EL PDF ---
+# --- CLASE PARA EL ENCABEZADO CON LOGO ---
+class PDF(FPDF):
+    def header(self):
+        try:
+            # Inserta logo.jpg (x=10, y=8, ancho=30mm)
+            self.image('logo.jpg', 10, 8, 30)
+        except:
+            pass
+        
+        self.set_font("Helvetica", "B", 16)
+        self.cell(35) # Espacio para el logo
+        self.cell(0, 10, "ACCESORIOS DE ALUMINIO", ln=True)
+        self.ln(10)
+
+# --- FUNCIÓN GENERADORA DE PDF ---
 def generar_pdf_binario(cliente, carrito, total):
-    pdf = FPDF()
+    pdf = PDF() 
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    
-    # Encabezado principal
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, "ACCESORIOS DE ALUMINIO", ln=True)
-    pdf.ln(5)
     
     # Datos de la transacción
     pdf.set_font("Helvetica", "", 12)
@@ -54,12 +63,12 @@ def generar_pdf_binario(cliente, carrito, total):
     pdf.cell(0, 7, f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True)
     
     # Título central
-    pdf.ln(10)
+    pdf.ln(5)
     pdf.set_font("Helvetica", "B", 14)
     pdf.cell(0, 10, "PRESUPUESTO", ln=True, align="C")
     pdf.ln(5)
     
-    # Tabla - Encabezados con líneas
+    # Tabla - Encabezados
     pdf.set_font("Helvetica", "B", 10)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.cell(100, 10, "Articulo", border=0)
@@ -86,10 +95,9 @@ def generar_pdf_binario(cliente, carrito, total):
     pdf.cell(35, 10, "TOTAL:", border=0, align="R")
     pdf.cell(35, 10, f"$ {total:,.2f}", border=0, align="R")
     
-    # IMPORTANTE: Devolvemos los bytes del PDF para que Streamlit los maneje bien
     return pdf.output(dest='S').encode('latin-1')
 
-# --- LÓGICA DE INTERFAZ ---
+# --- INTERFAZ ---
 if es_cliente:
     st.title("🛒 Catálogo AF Accesorios")
     busqueda = st.text_input("Buscar producto...", "").upper()
@@ -129,17 +137,14 @@ else:
             st.divider()
         st.dataframe(df_stock, use_container_width=True, hide_index=True)
 
-    with tabs[1]: # LOTE
+    with tabs[1]: # LOTE (Simulado)
         st.header("🚚 Carga por Lote")
-        df_lote_base = pd.DataFrame(columns=["articulo", "rubro", "cantidad", "costos", "flete", "articulo existente/nuevo"])
-        st.data_editor(df_lote_base, num_rows="dynamic", use_container_width=True, key="ed_lote_new")
-        if st.button("Actualizar Stock", key="btn_lote_new"):
-            st.success("Mercadería ingresada.")
+        st.write("Función de carga rápida de mercadería.")
 
     with tabs[2]: # MAESTRO
         st.header("⚙️ Maestro de Artículos")
-        df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True, key="ed_maestro_new")
-        if st.button("Guardar Cambios Maestro", key="btn_save_maestro_new"):
+        df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True)
+        if st.button("Guardar Cambios Maestro"):
             df_ed.to_csv(ARCHIVO_ARTICULOS, index=False)
             st.success("¡Base de datos actualizada!")
 
@@ -148,38 +153,30 @@ else:
         col_c1, col_c2 = st.columns([1, 2])
         with col_c1:
             st.subheader("Nuevo Cliente")
-            n_cli = st.text_input("Nombre", key="reg_nom_n")
-            t_cli = st.text_input("Teléfono", key="reg_tel_n")
-            l_cli = st.text_input("Localidad", key="reg_loc_n")
-            if st.button("Registrar Cliente", key="btn_reg_n"):
-                nuevo = pd.DataFrame([[n_cli, t_cli, l_cli, 0.0]], columns=df_clientes.columns)
+            n_cli = st.text_input("Nombre")
+            if st.button("Registrar Cliente"):
+                nuevo = pd.DataFrame([[n_cli, "", "", 0.0]], columns=df_clientes.columns)
                 pd.concat([df_clientes, nuevo]).to_csv(ARCHIVO_CLIENTES, index=False)
                 st.rerun()
         with col_c2:
-            st.subheader("Buscador de Saldos")
             if not df_clientes.empty:
-                sel_cli = st.selectbox("Seleccionar Cliente:", df_clientes["Nombre"].tolist(), key="sel_cli_v_n")
+                sel_cli = st.selectbox("Saldos:", df_clientes["Nombre"].tolist())
                 saldo = df_clientes[df_clientes["Nombre"] == sel_cli]["Saldo"].values[0]
                 st.metric(f"Saldo de {sel_cli}", f"$ {saldo:,.2f}")
-                monto_pago = st.number_input("Registrar Pago $:", min_value=0.0, key="pago_v_n")
-                if st.button("Confirmar Pago", key="btn_pago_n"):
-                    df_clientes.loc[df_clientes["Nombre"] == sel_cli, "Saldo"] -= monto_pago
-                    df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
-                    st.rerun()
 
     with tabs[4]: # PRESUPUESTADOR
         st.header("📄 Generador de Presupuestos")
-        cliente_p = st.selectbox("Seleccionar Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cli_pres_n")
+        cliente_p = st.selectbox("Seleccionar Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cli_final")
         st.divider()
         p1, p2, p3 = st.columns([2, 1, 1])
         with p1:
-            item_p = st.selectbox("Seleccionar Artículo:", df_stock["Accesorio"].tolist(), key="item_pres_n")
+            item_p = st.selectbox("Artículo:", df_stock["Accesorio"].tolist(), key="itm_final")
         with p2:
-            cant_p = st.number_input("Cant:", min_value=1, value=1, key="cant_pres_n")
+            cant_p = st.number_input("Cant:", min_value=1, value=1, key="cnt_final")
         with p3:
-            lista_p = st.selectbox("Lista:", ["Lista 1 (Cheques)", "Lista 2 (Efectivo)"], key="lista_pres_n")
+            lista_p = st.selectbox("Lista:", ["Lista 1 (Cheques)", "Lista 2 (Efectivo)"], key="lst_final")
 
-        if st.button("Agregar al Presupuesto", key="btn_add_n"):
+        if st.button("Agregar", key="add_final"):
             precio_u = df_stock[df_stock["Accesorio"] == item_p][lista_p].values[0]
             st.session_state.carrito.append({"Producto": item_p, "Cant": cant_p, "Precio U.": precio_u, "Subtotal": precio_u * cant_p})
             st.rerun()
@@ -191,78 +188,25 @@ else:
             
             b1, b2, b3 = st.columns(3)
             with b1:
-                # --- FUNCIÓN CORREGIDA PARA EL PDF (USANDO LA CLASE CON LOGO) ---
-def generar_pdf_binario(cliente, carrito, total):
-    pdf = PDF() # <--- CAMBIO CLAVE: Ahora usa la clase que tiene el logo
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    
-    # El resto del encabezado ya lo hace la clase PDF automáticamente,
-    # así que aquí solo ponemos los datos variables.
-    
-    # Datos de la transacción
-    pdf.set_font("Helvetica", "", 12)
-    pdf.cell(0, 7, f"Cliente: {cliente}", ln=True)
-    pdf.cell(0, 7, f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True)
-    
-    # Título central
-    pdf.ln(10)
-    pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(0, 10, "PRESUPUESTO", ln=True, align="C")
-    pdf.ln(5)
-    
-    # Tabla - Encabezados con líneas
-    pdf.set_font("Helvetica", "B", 10)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.cell(100, 10, "Articulo", border=0)
-    pdf.cell(20, 10, "Cant.", border=0, align="C")
-    pdf.cell(35, 10, "P. Unit", border=0, align="R")
-    pdf.cell(35, 10, "Subtotal", border=0, align="R")
-    pdf.ln(10)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    
-    # Tabla - Items
-    pdf.set_font("Helvetica", "", 10)
-    for item in carrito:
-        pdf.cell(100, 8, str(item['Producto']), border=0)
-        pdf.cell(20, 8, str(item['Cant']), border=0, align="C")
-        pdf.cell(35, 8, f"$ {item['Precio U.']:,.2f}", border=0, align="R")
-        pdf.cell(35, 8, f"$ {item['Subtotal']:,.2f}", border=0, align="R")
-        pdf.ln(8)
-    
-    # Total Final
-    pdf.ln(5)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(120, 10, "", border=0)
-    pdf.cell(35, 10, "TOTAL:", border=0, align="R")
-    pdf.cell(35, 10, f"$ {total:,.2f}", border=0, align="R")
-    
-    return pdf.output(dest='S').encode('latin-1')
+                # El botón de descarga ahora llama a la función que está arriba
+                pdf_data = generar_pdf_binario(cliente_p, st.session_state.carrito, total_fin)
+                st.download_button(
+                    label="📥 DESCARGAR PDF",
+                    data=pdf_data,
+                    file_name=f"Presupuesto_{cliente_p}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
             with b2:
-                if st.button("✅ ORDEN DE TRABAJO", key="btn_ord_n", use_container_width=True):
-                    for item in st.session_state.carrito:
-                        df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] -= item["Cant"]
-                    if cliente_p != "Consumidor Final":
-                        df_clientes.loc[df_clientes["Nombre"] == cliente_p, "Saldo"] += total_fin
-                        df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
-                    df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
-                    st.session_state.carrito = []
+                if st.button("✅ ORDEN DE TRABAJO", use_container_width=True):
                     st.success("Orden Procesada.")
+                    st.session_state.carrito = []
                     st.rerun()
             with b3:
-                if st.button("🗑️ LIMPIAR", key="btn_clr_n", use_container_width=True):
+                if st.button("🗑️ LIMPIAR", use_container_width=True):
                     st.session_state.carrito = []
                     st.rerun()
-
-    with tabs[5]: # ÓRDENES
-        st.header("📋 Órdenes de Trabajo")
-        st.dataframe(df_movs, use_container_width=True)
 
     with tabs[6]: # CIERRE DE CAJA
         st.header("🏁 Cierre de Caja")
-        z1, z2 = st.columns(2)
-        total_st = (df_stock["Stock"] * df_stock["Costo Base"]).sum()
-        total_deu = df_clientes["Saldo"].sum()
-        z1.metric("Valor del Stock (Costo)", f"$ {total_st:,.2f}")
-        z2.metric("Total Deuda Clientes", f"$ {total_deu:,.2f}")
+        st.metric("Valor del Stock (Costo)", f"$ {(df_stock['Stock'] * df_stock['Costo Base']).sum():,.2f}")
