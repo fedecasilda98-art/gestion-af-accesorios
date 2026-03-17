@@ -62,50 +62,44 @@ else:
     menu = ["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre de Caja"]
     choice = st.tabs(menu)
 
-    with choice[0]: # PESTAÑA STOCK
+   with choice[0]: # PESTAÑA STOCK
         st.header("Análisis de Inventario y Rentabilidad")
         
-        # 1. CÁLCULOS FINANCIEROS
-        # Dinero total en costo (Stock * Costo Base)
-        df_stock["Total Costo"] = df_stock["Stock"] * df_stock["Costo Base"]
+        # 1. CÁLCULOS FINANCIEROS REALES
+        # Calculamos el costo con flete incluido (Costo Base + % Flete)
+        df_stock["Costo Real U."] = df_stock["Costo Base"] * (1 + df_stock["Flete"] / 100)
         
-        # Ganancia potencial Lista 1 (Cheques)
-        df_stock["Ganancia L1"] = (df_stock["Lista 1 (Cheques)"] - df_stock["Costo Base"]) * df_stock["Stock"]
+        # Dinero total invertido (Stock * Costo con Flete)
+        df_stock["Inversión Total"] = df_stock["Stock"] * df_stock["Costo Real U."]
         
-        # Ganancia potencial Lista 2 (Efectivo)
-        df_stock["Ganancia L2"] = (df_stock["Lista 2 (Efectivo)"] - df_stock["Costo Base"]) * df_stock["Stock"]
+        # Ganancia potencial Lista 1 (Venta - Costo Real) * Stock
+        df_stock["Ganancia L1"] = (df_stock["Lista 1 (Cheques)"] - df_stock["Costo Real U."]) * df_stock["Stock"]
+        
+        # Ganancia potencial Lista 2 (Venta - Costo Real) * Stock
+        df_stock["Ganancia L2"] = (df_stock["Lista 2 (Efectivo)"] - df_stock["Costo Real U."]) * df_stock["Stock"]
 
-        # 2. INDICADORES SUPERIORES
-        c1, c2, c3 = st.columns(3)
-        total_inversion = df_stock["Total Costo"].sum()
-        total_ganancia_l1 = df_stock["Ganancia L1"].sum()
-        total_ganancia_l2 = df_stock["Ganancia L2"].sum()
+        # 2. TABLERO DE MÉTRICAS
+        m1, m2, m3 = st.columns(3)
+        total_invertido = df_stock["Inversión Total"].sum()
+        total_gan_l1 = df_stock["Ganancia L1"].sum()
+        total_gan_l2 = df_stock["Ganancia L2"].sum()
 
-        c1.metric("Inversión Total (Costo)", f"$ {total_inversion:,.2f}")
-        c2.metric("Ganancia Potencial (Lista 1)", f"$ {total_ganancia_l1:,.2f}", delta="Cheques")
-        c3.metric("Ganancia Potencial (Lista 2)", f"$ {total_ganancia_l2:,.2f}", delta="Efectivo", delta_color="normal")
+        m1.metric("Mercadería en Stock (Costo + Flete)", f"$ {total_invertido:,.2f}")
+        m2.metric("Ganancia Esperada (Lista 1)", f"$ {total_gan_l1:,.2f}")
+        m3.metric("Ganancia Esperada (Lista 2)", f"$ {total_gan_l2:,.2f}")
 
         st.divider()
 
-        # 3. TABLA DETALLADA
-        st.subheader("Detalle por Artículo")
-        # Mostramos la tabla con las nuevas columnas de análisis
+        # 3. TABLA DE CONTROL
+        st.subheader("Desglose por Producto")
+        # Mostramos las columnas clave para que audites los números
         st.dataframe(
             df_stock[[
-                "Rubro", "Accesorio", "Stock", "Costo Base", 
-                "Lista 1 (Cheques)", "Lista 2 (Efectivo)", 
-                "Total Costo", "Ganancia L1", "Ganancia L2"
+                "Rubro", "Accesorio", "Stock", "Costo Real U.", 
+                "Inversión Total", "Ganancia L1", "Ganancia L2"
             ]], 
             use_container_width=True, 
             hide_index=True
-        )
-        
-        # Botón opcional para descargar este análisis en Excel/CSV
-        st.download_button(
-            label="📥 Descargar Reporte de Valor de Stock",
-            data=df_stock.to_csv(index=False).encode('utf-8'),
-            file_name=f"valor_stock_{datetime.now().strftime('%d_%m_%Y')}.csv",
-            mime="text/csv",
         )
 
     with choice[1]: # LOTE (COMO TE GUSTÓ)
