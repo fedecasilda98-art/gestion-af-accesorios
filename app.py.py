@@ -2,13 +2,12 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
-from fpdf import FPDF
 import re
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Gestión AF Accesorios", layout="wide", initial_sidebar_state="collapsed")
 
-# Definición de variables globales (Esto corrige el error de la Imagen 3)
+# Archivos Base
 ARCHIVO_ARTICULOS = "lista_articulos_interna.csv"
 ARCHIVO_CLIENTES = "clientes_base.csv"
 ARCHIVO_MOVIMIENTOS = "movimientos_clientes.csv"
@@ -33,11 +32,14 @@ def cargar_datos(archivo, columnas):
 
 df_stock = cargar_datos(ARCHIVO_ARTICULOS, ["Rubro", "Proveedor", "Accesorio", "Stock", "Costo Base", "Flete", "% Ganancia", "Lista 1 (Cheques)", "Lista 2 (Efectivo)", "Descripcion"])
 df_clientes = cargar_datos(ARCHIVO_CLIENTES, ["Nombre", "Tel", "Localidad", "Saldo"])
+df_movs = cargar_datos(ARCHIVO_MOVIMIENTOS, ["Fecha", "Cliente", "Tipo", "Monto", "Detalle"])
 
 # --- LÓGICA DE INTERFAZ ---
 
 if es_cliente:
-    # VISTA CLIENTE
+    # ---------------------------------------------------------
+    # VISTA CLIENTE (SOBRIA)
+    # ---------------------------------------------------------
     st.title("🛒 Catálogo AF Accesorios")
     st.info("Precios sin IVA. Consultar disponibilidad por WhatsApp.")
     busqueda = st.text_input("Buscar producto...", "").upper()
@@ -58,58 +60,72 @@ if es_cliente:
                     msg = f"Hola AF Accesorios! Quiero pedir {c} de {row['Accesorio']} ({l_tipo})."
                     st.markdown(f"[Confirmar en WhatsApp](https://wa.me/{WHATSAPP_NUM}?text={msg})")
 else:
-    # VISTA ADMINISTRADOR (ESTILO ORIGINAL)
+    # ---------------------------------------------------------
+    # VISTA ADMINISTRADOR (FORMATO ORIGINAL RECUPERADO)
+    # ---------------------------------------------------------
     menu = ["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre de Caja"]
     choice = st.tabs(menu)
 
-    with choice[0]: # Stock
+    with choice[0]: # PESTAÑA STOCK
         st.header("Inventario Actual")
         st.dataframe(df_stock, use_container_width=True, hide_index=True)
 
-    with choice[2]: # Maestro
-        st.header("Administración de Precios")
+    with choice[1]: # PESTAÑA LOTE
+        st.header("Carga por Lote")
+        st.write("Función para actualizar múltiples artículos (en desarrollo).")
+
+    with choice[2]: # PESTAÑA MAESTRO
+        st.header("⚙️ Maestro de Artículos")
+        st.write("Editá directamente sobre la tabla y guardá los cambios.")
         df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True)
         if st.button("Guardar Cambios Maestro"):
             df_ed.to_csv(ARCHIVO_ARTICULOS, index=False)
-            st.success("¡Datos guardados!")
+            st.success("¡Base de datos de artículos actualizada!")
 
-    with choice[3]: # Cta Cte
-        st.header("Gestión de Clientes")
-        with st.expander("📝 Alta / Modificación de Cliente"):
+    with choice[3]: # PESTAÑA CTA CTE (RECUPERADA SEGÚN TU FOTO)
+        st.header("👥 Gestión de Clientes")
+        with st.expander("📝 Alta / Modificación de Cliente", expanded=True):
             c1, c2 = st.columns(2)
             n = c1.text_input("Nombre")
             t = c2.text_input("Tel")
             l = c1.text_input("Localidad")
             s = c2.number_input("Saldo Inicial", 0.0)
-            if st.button("Guardar Cliente"):
+            if st.button("Guardar Nuevo Cliente"):
                 nuevo = pd.DataFrame([[n, t, l, s]], columns=df_clientes.columns)
                 df_clientes = pd.concat([df_clientes, nuevo], ignore_index=True)
                 df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
-                st.success("Cliente guardado")
+                st.success("Cliente registrado con éxito")
                 st.rerun()
         
         st.divider()
         if not df_clientes.empty:
-            sel_cli = st.selectbox("Seleccionar Cliente:", df_clientes["Nombre"].tolist())
+            sel_cli = st.selectbox("Seleccionar Cliente para ver Saldo:", df_clientes["Nombre"].tolist())
             datos_cli = df_clientes[df_clientes["Nombre"] == sel_cli]
             if not datos_cli.empty:
                 saldo_actual = datos_cli["Saldo"].values[0]
-                st.subheader(f"Saldo de {sel_cli}: $ {saldo_actual:,.2f}")
+                st.metric(label=f"Saldo de {sel_cli}", value=f"$ {saldo_actual:,.2f}")
+                
+                with st.expander("💰 Registrar Pago / Cobro"):
+                    monto_pago = st.number_input("Monto del Pago", min_value=0.0)
+                    if st.button("Registrar Cobranza"):
+                        # Lógica para restar al saldo
+                        df_clientes.loc[df_clientes["Nombre"] == sel_cli, "Saldo"] -= monto_pago
+                        df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
+                        st.success(f"Cobro registrado. Nuevo saldo: $ {saldo_actual - monto_pago:,.2f}")
+                        st.rerun()
         else:
-            st.warning("No hay clientes cargados.")
+            st.warning("No hay clientes registrados.")
 
-    # --- BARRA LATERAL (Sidebar) ---
-    with st.sidebar:
-        if os.path.exists(LOGO_PATH):
-            st.image(LOGO_PATH)
-        else:
-            st.write("AF Accesorios")
-        st.header("Configuración de Fotos")
-        art_f = st.selectbox("Producto:", sorted(df_stock["Accesorio"].tolist()))
-        file_f = st.file_uploader("Subir imagen", type=['jpg', 'png'])
-        if st.button("Vincular Foto"):
-            if file_f:
-                nom = re.sub(r'[^a-zA-Z0-9\s]', '', art_f)
-                with open(os.path.join(CARPETA_FOTOS, f"{nom}.jpg"), "wb") as f:
-                    f.write(file_f.getbuffer())
-                st.success("Foto vinculada")
+    with choice[4]: # PESTAÑA PRESUPUESTADOR
+        st.header("📄 Generador de Presupuestos")
+        st.write("Seleccioná los artículos para generar el documento PDF.")
+
+    with choice[5]: # PESTAÑA ÓRDENES
+        st.header("📋 Órdenes de Trabajo")
+        st.dataframe(df_movs, use_container_width=True)
+
+    with choice[6]: # PESTAÑA CIERRE DE CAJA
+        st.header("🏁 Cierre de Caja")
+        st.write("Resumen de movimientos del día.")
+
+# Eliminada la barra lateral de carga de imágenes para mayor limpieza.
