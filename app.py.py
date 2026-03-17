@@ -7,12 +7,11 @@ import re
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Gestión AF Accesorios", layout="wide", initial_sidebar_state="collapsed")
 
-# Definición de variables globales (Evita NameError de imagen 5a0367.png)
+# Archivos y Variables
 ARCHIVO_ARTICULOS = "lista_articulos_interna.csv"
 ARCHIVO_CLIENTES = "clientes_base.csv"
 ARCHIVO_MOVIMIENTOS = "movimientos_clientes.csv"
 CARPETA_FOTOS = "fotos_productos" 
-LOGO_PATH = "logo.jpg"
 WHATSAPP_NUM = "5493413512049"
 
 # Detectar Modo Cliente
@@ -40,7 +39,6 @@ if "carrito" not in st.session_state:
 # --- LÓGICA DE INTERFAZ ---
 
 if es_cliente:
-    # VISTA CLIENTE (VIDRIERA)
     st.title("🛒 Catálogo AF Accesorios")
     busqueda = st.text_input("Buscar producto...", "").upper()
     df_ver = df_stock[df_stock["Accesorio"].str.contains(busqueda, na=False)]
@@ -60,93 +58,62 @@ if es_cliente:
                     msg = f"Hola AF Accesorios! Quiero pedir {c} de {row['Accesorio']} ({l_tipo})."
                     st.markdown(f"[Confirmar en WhatsApp](https://wa.me/{WHATSAPP_NUM}?text={msg})")
 else:
-    # VISTA ADMINISTRADOR
     menu = ["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre de Caja"]
     choice = st.tabs(menu)
 
-with choice[0]: # PESTAÑA STOCK
+    with choice[0]: # PESTAÑA STOCK
         st.header("Análisis de Inventario")
-        
         if not df_stock.empty:
-            # 1. LIMPIEZA DE DATOS (Evita el error de la línea 115)
-            # Convertimos a número y llenamos vacíos con 0 para que no falle la cuenta
-            df_stock["Stock"] = pd.to_numeric(df_stock["Stock"], errors='coerce').fillna(0)
-            df_stock["Costo Base"] = pd.to_numeric(df_stock["Costo Base"], errors='coerce').fillna(0)
-            df_stock["Flete"] = pd.to_numeric(df_stock["Flete"], errors='coerce').fillna(0)
-            df_stock["Lista 1 (Cheques)"] = pd.to_numeric(df_stock["Lista 1 (Cheques)"], errors='coerce').fillna(0)
-            df_stock["Lista 2 (Efectivo)"] = pd.to_numeric(df_stock["Lista 2 (Efectivo)"], errors='coerce').fillna(0)
+            # Limpieza y conversión rápida
+            df_s = df_stock.copy()
+            for col in ["Stock", "Costo Base", "Flete", "Lista 1 (Cheques)", "Lista 2 (Efectivo)"]:
+                df_s[col] = pd.to_numeric(df_s[col], errors='coerce').fillna(0)
 
-            # 2. CÁLCULOS DIRECTOS
-            # Valor Real: (Costo + % Flete) * Stock
-            valor_real_total = ((df_stock["Costo Base"] * (1 + df_stock["Flete"] / 100)) * df_stock["Stock"]).sum()
-            
-            # Valor Lista 1: Precio * Stock
-            valor_lista1_total = (df_stock["Lista 1 (Cheques)"] * df_stock["Stock"]).sum()
-            
-            # Valor Lista 2: Precio * Stock
-            valor_lista2_total = (df_stock["Lista 2 (Efectivo)"] * df_stock["Stock"]).sum()
+            # Las 3 Variantes que pediste
+            valor_real = ((df_s["Costo Base"] * (1 + df_s["Flete"] / 100)) * df_s["Stock"]).sum()
+            valor_l1 = (df_s["Lista 1 (Cheques)"] * df_s["Stock"]).sum()
+            valor_l2 = (df_s["Lista 2 (Efectivo)"] * df_s["Stock"]).sum()
 
-            # 3. LAS TRES VARIANTES
             v1, v2, v3 = st.columns(3)
-            
-            v1.metric("Valor Real (Capital)", f"$ {valor_real_total:,.2f}")
-            v2.metric("Total Lista 1 (Cheques)", f"$ {valor_lista1_total:,.2f}")
-            v3.metric("Total Lista 2 (Efectivo)", f"$ {valor_lista2_total:,.2f}")
+            v1.metric("Costos + Fletes (Capital)", f"$ {valor_real:,.2f}")
+            v2.metric("Total Lista 1 (Cheques)", f"$ {valor_l1:,.2f}")
+            v3.metric("Total Lista 2 (Efectivo)", f"$ {valor_l2:,.2f}")
 
             st.divider()
-
-            # 4. TABLA DETALLE
-            st.subheader("Detalle de Inventario")
-            st.dataframe(
-                df_stock[["Rubro", "Accesorio", "Stock", "Costo Base", "Flete", "Lista 1 (Cheques)", "Lista 2 (Efectivo)"]], 
-                use_container_width=True, 
-                hide_index=True
-            )
+            st.dataframe(df_s[["Rubro", "Accesorio", "Stock", "Costo Base", "Flete", "Lista 1 (Cheques)", "Lista 2 (Efectivo)"]], use_container_width=True, hide_index=True)
         else:
-            st.warning("No hay artículos cargados.")
-    with choice[1]: # PESTAÑA LOTE (Columnas ordenadas según pedido)
+            st.warning("Stock vacío.")
+
+    with choice[1]: # PESTAÑA LOTE
         st.header("🚚 Carga por Lote")
         df_lote_base = pd.DataFrame(columns=["articulo", "rubro", "cantidad", "costos", "flete", "articulo existente/nuevo"])
         st.data_editor(df_lote_base, num_rows="dynamic", use_container_width=True)
         if st.button("Procesar Ingreso"):
-            st.info("Función de guardado en preparación para el siguiente segmento.")
+            st.info("Función de guardado en preparación.")
 
-    with choice[2]: # PESTAÑA MAESTRO
+    with choice[2]: # MAESTRO
         st.header("⚙️ Maestro de Artículos")
         df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True)
         if st.button("Guardar Cambios Maestro"):
             df_ed.to_csv(ARCHIVO_ARTICULOS, index=False)
-            st.success("¡Base de datos actualizada!")
+            st.success("Base actualizada.")
 
-    with choice[3]: # PESTAÑA CTA CTE (Protección contra IndexError de imagen 5a07c3.png)
+    with choice[3]: # CTA CTE
         st.header("👥 Gestión de Clientes")
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            st.subheader("Nuevo Cliente")
-            n_c = st.text_input("Nombre")
-            t_c = st.text_input("Tel")
-            l_c = st.text_input("Localidad")
-            if st.button("Guardar"):
-                nuevo = pd.DataFrame([[n_c, t_c, l_c, 0.0]], columns=df_clientes.columns)
-                pd.concat([df_clientes, nuevo]).to_csv(ARCHIVO_CLIENTES, index=False)
-                st.rerun()
-        with c2:
-            st.subheader("Saldos")
-            if not df_clientes.empty:
-                sel_cli = st.selectbox("Cliente:", df_clientes["Nombre"].tolist())
-                datos_cli = df_clientes[df_clientes["Nombre"] == sel_cli]
-                if not datos_cli.empty:
-                    saldo = datos_cli["Saldo"].values[0]
-                    st.metric(f"Saldo de {sel_cli}", f"$ {saldo:,.2f}")
-            else: st.warning("No hay clientes.")
+        if not df_clientes.empty:
+            sel_cli = st.selectbox("Cliente:", df_clientes["Nombre"].tolist())
+            datos_cli = df_clientes[df_clientes["Nombre"] == sel_cli]
+            if not datos_cli.empty:
+                st.metric(f"Saldo de {sel_cli}", f"$ {datos_cli['Saldo'].values[0]:,.2f}")
+        else: st.info("Sin clientes.")
 
-    with choice[4]: # PESTAÑA PRESUPUESTADOR (Selección de cliente y tabla)
+    with choice[4]: # PRESUPUESTADOR
         st.header("📄 Generador de Presupuestos")
-        cli_p = st.selectbox("Cliente para el presupuesto:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"])
-        col1, col2, col3 = st.columns([2, 1, 1])
-        with col1: it_p = st.selectbox("Artículo:", df_stock["Accesorio"].tolist())
-        with col2: ca_p = st.number_input("Cant:", min_value=1, value=1)
-        with col3: li_p = st.selectbox("Lista de Precio:", ["Lista 1 (Cheques)", "Lista 2 (Efectivo)"])
+        cli_p = st.selectbox("Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"])
+        c1, c2, c3 = st.columns([2, 1, 1])
+        with c1: it_p = st.selectbox("Artículo:", df_stock["Accesorio"].tolist())
+        with c2: ca_p = st.number_input("Cant:", min_value=1, value=1)
+        with c3: li_p = st.selectbox("Lista:", ["Lista 1 (Cheques)", "Lista 2 (Efectivo)"])
         
         if st.button("Agregar"):
             pr_u = df_stock[df_stock["Accesorio"] == it_p][li_p].values[0]
@@ -161,8 +128,10 @@ with choice[0]: # PESTAÑA STOCK
                 st.session_state.carrito = []
                 st.rerun()
 
+    with choice[5]: # ÓRDENES
+        st.header("📋 Órdenes de Trabajo")
+        st.dataframe(df_movs, use_container_width=True)
+
     with choice[6]: # CIERRE DE CAJA
         st.header("🏁 Cierre de Caja")
         st.metric("Total Deuda Clientes", f"$ {df_clientes['Saldo'].sum():,.2f}")
-        st.subheader("Últimos Movimientos")
-        st.dataframe(df_movs.tail(10), use_container_width=True)
