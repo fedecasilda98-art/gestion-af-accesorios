@@ -191,16 +191,54 @@ else:
             
             b1, b2, b3 = st.columns(3)
             with b1:
-                # AQUÍ ESTÁ EL ARREGLO PARA EL PDF
-                pdf_data = generar_pdf_binario(cliente_p, st.session_state.carrito, total_fin)
-                st.download_button(
-                    label="📥 DESCARGAR PDF",
-                    data=pdf_data,
-                    file_name=f"Presupuesto_{cliente_p}.pdf",
-                    mime="application/pdf",
-                    key="btn_pdf_final_new",
-                    use_container_width=True
-                )
+                # --- FUNCIÓN CORREGIDA PARA EL PDF (USANDO LA CLASE CON LOGO) ---
+def generar_pdf_binario(cliente, carrito, total):
+    pdf = PDF() # <--- CAMBIO CLAVE: Ahora usa la clase que tiene el logo
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    
+    # El resto del encabezado ya lo hace la clase PDF automáticamente,
+    # así que aquí solo ponemos los datos variables.
+    
+    # Datos de la transacción
+    pdf.set_font("Helvetica", "", 12)
+    pdf.cell(0, 7, f"Cliente: {cliente}", ln=True)
+    pdf.cell(0, 7, f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True)
+    
+    # Título central
+    pdf.ln(10)
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 10, "PRESUPUESTO", ln=True, align="C")
+    pdf.ln(5)
+    
+    # Tabla - Encabezados con líneas
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.cell(100, 10, "Articulo", border=0)
+    pdf.cell(20, 10, "Cant.", border=0, align="C")
+    pdf.cell(35, 10, "P. Unit", border=0, align="R")
+    pdf.cell(35, 10, "Subtotal", border=0, align="R")
+    pdf.ln(10)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    
+    # Tabla - Items
+    pdf.set_font("Helvetica", "", 10)
+    for item in carrito:
+        pdf.cell(100, 8, str(item['Producto']), border=0)
+        pdf.cell(20, 8, str(item['Cant']), border=0, align="C")
+        pdf.cell(35, 8, f"$ {item['Precio U.']:,.2f}", border=0, align="R")
+        pdf.cell(35, 8, f"$ {item['Subtotal']:,.2f}", border=0, align="R")
+        pdf.ln(8)
+    
+    # Total Final
+    pdf.ln(5)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(120, 10, "", border=0)
+    pdf.cell(35, 10, "TOTAL:", border=0, align="R")
+    pdf.cell(35, 10, f"$ {total:,.2f}", border=0, align="R")
+    
+    return pdf.output(dest='S').encode('latin-1')
             with b2:
                 if st.button("✅ ORDEN DE TRABAJO", key="btn_ord_n", use_container_width=True):
                     for item in st.session_state.carrito:
