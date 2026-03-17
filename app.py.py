@@ -57,18 +57,15 @@ def generar_pdf_binario(cliente, carrito, total):
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     
-    # Datos de la transacción
     pdf.set_font("Helvetica", "", 12)
     pdf.cell(0, 7, f"Cliente: {cliente}", ln=True)
     pdf.cell(0, 7, f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True)
     
-    # Título central
     pdf.ln(5)
     pdf.set_font("Helvetica", "B", 14)
     pdf.cell(0, 10, "PRESUPUESTO", ln=True, align="C")
     pdf.ln(5)
     
-    # Tabla - Encabezados
     pdf.set_font("Helvetica", "B", 10)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.cell(100, 10, "Articulo", border=0)
@@ -78,7 +75,6 @@ def generar_pdf_binario(cliente, carrito, total):
     pdf.ln(10)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     
-    # Tabla - Items
     pdf.set_font("Helvetica", "", 10)
     for item in carrito:
         pdf.cell(100, 8, str(item['Producto']), border=0)
@@ -87,7 +83,6 @@ def generar_pdf_binario(cliente, carrito, total):
         pdf.cell(35, 8, f"$ {item['Subtotal']:,.2f}", border=0, align="R")
         pdf.ln(8)
     
-    # Total Final
     pdf.ln(5)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.set_font("Helvetica", "B", 12)
@@ -127,23 +122,26 @@ else:
             df_calc = df_stock.copy()
             for col in ["Stock", "Costo Base", "Lista 1 (Cheques)", "Lista 2 (Efectivo)"]:
                 df_calc[col] = pd.to_numeric(df_calc[col], errors='coerce').fillna(0)
+            
             total_costo = (df_calc["Costo Base"] * df_calc["Stock"]).sum()
             total_l1 = (df_calc["Lista 1 (Cheques)"] * df_calc["Stock"]).sum()
             total_l2 = (df_calc["Lista 2 (Efectivo)"] * df_calc["Stock"]).sum()
+            
             c1, c2, c3 = st.columns(3)
-            c1.metric("Valor del Stock (Costo)", f"$ {total_costo:,.2f}")
+            c1.metric("Valor Stock (Costo)", f"$ {total_costo:,.2f}")
             c2.metric("Total Lista 1", f"$ {total_l1:,.2f}")
             c3.metric("Total Lista 2", f"$ {total_l2:,.2f}")
             st.divider()
         st.dataframe(df_stock, use_container_width=True, hide_index=True)
 
-    with tabs[1]: # LOTE (Simulado)
+    with tabs[1]: # LOTE
         st.header("🚚 Carga por Lote")
-        st.write("Función de carga rápida de mercadería.")
+        df_lote_base = pd.DataFrame(columns=["articulo", "rubro", "cantidad", "costos", "flete", "articulo existente/nuevo"])
+        st.data_editor(df_lote_base, num_rows="dynamic", use_container_width=True, key="ed_lote")
 
     with tabs[2]: # MAESTRO
         st.header("⚙️ Maestro de Artículos")
-        df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True)
+        df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True, key="ed_maestro")
         if st.button("Guardar Cambios Maestro"):
             df_ed.to_csv(ARCHIVO_ARTICULOS, index=False)
             st.success("¡Base de datos actualizada!")
@@ -153,30 +151,39 @@ else:
         col_c1, col_c2 = st.columns([1, 2])
         with col_c1:
             st.subheader("Nuevo Cliente")
-            n_cli = st.text_input("Nombre")
+            n_cli = st.text_input("Nombre", key="n_cli")
+            t_cli = st.text_input("Teléfono", key="t_cli")
+            l_cli = st.text_input("Localidad", key="l_cli")
             if st.button("Registrar Cliente"):
-                nuevo = pd.DataFrame([[n_cli, "", "", 0.0]], columns=df_clientes.columns)
+                nuevo = pd.DataFrame([[n_cli, t_cli, l_cli, 0.0]], columns=df_clientes.columns)
                 pd.concat([df_clientes, nuevo]).to_csv(ARCHIVO_CLIENTES, index=False)
                 st.rerun()
         with col_c2:
+            st.subheader("Buscador de Saldos")
             if not df_clientes.empty:
-                sel_cli = st.selectbox("Saldos:", df_clientes["Nombre"].tolist())
-                saldo = df_clientes[df_clientes["Nombre"] == sel_cli]["Saldo"].values[0]
+                sel_cli = st.selectbox("Cliente:", df_clientes["Nombre"].tolist(), key="sel_cli")
+                idx_cli = df_clientes[df_clientes["Nombre"] == sel_cli].index[0]
+                saldo = df_clientes.at[idx_cli, "Saldo"]
                 st.metric(f"Saldo de {sel_cli}", f"$ {saldo:,.2f}")
+                monto_pago = st.number_input("Registrar Pago $:", min_value=0.0)
+                if st.button("Confirmar Pago"):
+                    df_clientes.at[idx_cli, "Saldo"] -= monto_pago
+                    df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
+                    st.rerun()
 
     with tabs[4]: # PRESUPUESTADOR
         st.header("📄 Generador de Presupuestos")
-        cliente_p = st.selectbox("Seleccionar Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cli_final")
+        cliente_p = st.selectbox("Seleccionar Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cli_p")
         st.divider()
         p1, p2, p3 = st.columns([2, 1, 1])
         with p1:
-            item_p = st.selectbox("Artículo:", df_stock["Accesorio"].tolist(), key="itm_final")
+            item_p = st.selectbox("Artículo:", df_stock["Accesorio"].tolist(), key="itm_p")
         with p2:
-            cant_p = st.number_input("Cant:", min_value=1, value=1, key="cnt_final")
+            cant_p = st.number_input("Cant:", min_value=1, value=1, key="cnt_p")
         with p3:
-            lista_p = st.selectbox("Lista:", ["Lista 1 (Cheques)", "Lista 2 (Efectivo)"], key="lst_final")
+            lista_p = st.selectbox("Lista:", ["Lista 1 (Cheques)", "Lista 2 (Efectivo)"], key="lst_p")
 
-        if st.button("Agregar", key="add_final"):
+        if st.button("Agregar", key="add_p"):
             precio_u = df_stock[df_stock["Accesorio"] == item_p][lista_p].values[0]
             st.session_state.carrito.append({"Producto": item_p, "Cant": cant_p, "Precio U.": precio_u, "Subtotal": precio_u * cant_p})
             st.rerun()
@@ -188,25 +195,32 @@ else:
             
             b1, b2, b3 = st.columns(3)
             with b1:
-                # El botón de descarga ahora llama a la función que está arriba
                 pdf_data = generar_pdf_binario(cliente_p, st.session_state.carrito, total_fin)
-                st.download_button(
-                    label="📥 DESCARGAR PDF",
-                    data=pdf_data,
-                    file_name=f"Presupuesto_{cliente_p}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True
-                )
+                st.download_button(label="📥 DESCARGAR PDF", data=pdf_data, file_name=f"Presupuesto_{cliente_p}.pdf", mime="application/pdf", use_container_width=True)
             with b2:
                 if st.button("✅ ORDEN DE TRABAJO", use_container_width=True):
-                    st.success("Orden Procesada.")
+                    for item in st.session_state.carrito:
+                        df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] -= item["Cant"]
+                    if cliente_p != "Consumidor Final":
+                        df_clientes.loc[df_clientes["Nombre"] == cliente_p, "Saldo"] += total_fin
+                        df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
+                    df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
                     st.session_state.carrito = []
+                    st.success("Orden Procesada.")
                     st.rerun()
             with b3:
                 if st.button("🗑️ LIMPIAR", use_container_width=True):
                     st.session_state.carrito = []
                     st.rerun()
 
+    with tabs[5]: # ÓRDENES
+        st.header("📋 Órdenes de Trabajo")
+        st.dataframe(df_movs, use_container_width=True)
+
     with tabs[6]: # CIERRE DE CAJA
         st.header("🏁 Cierre de Caja")
-        st.metric("Valor del Stock (Costo)", f"$ {(df_stock['Stock'] * df_stock['Costo Base']).sum():,.2f}")
+        z1, z2 = st.columns(2)
+        total_st = (df_stock["Stock"] * df_stock["Costo Base"]).sum()
+        total_deu = df_clientes["Saldo"].sum()
+        z1.metric("Valor del Stock (Costo)", f"$ {total_st:,.2f}")
+        z2.metric("Total Deuda Clientes", f"$ {total_deu:,.2f}")
