@@ -3,6 +3,7 @@ import pandas as pd
 import os
 from datetime import datetime
 import re
+import base64
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Gestión AF Accesorios", layout="wide", initial_sidebar_state="collapsed")
@@ -36,9 +37,73 @@ df_movs = cargar_datos(ARCHIVO_MOVIMIENTOS, ["Fecha", "Cliente", "Tipo", "Monto"
 if "carrito" not in st.session_state:
     st.session_state.carrito = []
 
+# --- FUNCIONES DE EXPORTACIÓN ---
+def generar_html_presupuesto(cliente, carrito, total, lista_tipo):
+    fecha = datetime.now().strftime("%d/%m/%Y")
+    filas_tabla = ""
+    for item in carrito:
+        filas_tabla += f"""
+        <tr>
+            <td>{item['Producto']}</td>
+            <td style="text-align:center;">{item['Cant']}</td>
+            <td style="text-align:right;">$ {item['Precio U.']:,.2f}</td>
+            <td style="text-align:right;">$ {item['Subtotal']:,.2f}</td>
+        </tr>
+        """
+    
+    html = f"""
+    <html>
+    <head>
+        <style>
+            body {{ font-family: sans-serif; color: #333; }}
+            .header {{ text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; }}
+            .info {{ margin: 20px 0; }}
+            table {{ width: 100%; border-collapse: collapse; }}
+            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+            th {{ background-color: #f2f2f2; }}
+            .total {{ text-align: right; font-size: 1.2em; margin-top: 20px; font-weight: bold; }}
+            .footer {{ margin-top: 30px; font-size: 0.8em; text-align: center; color: #777; }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>AF ACCESORIOS</h1>
+            <p>Herrajes y Accesorios para Aluminio</p>
+        </div>
+        <div class="info">
+            <p><strong>Fecha:</strong> {fecha}</p>
+            <p><strong>Cliente:</strong> {cliente}</p>
+            <p><strong>Condición:</strong> {lista_tipo}</p>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Descripción</th>
+                    <th>Cant.</th>
+                    <th>P. Unitario</th>
+                    <th>Subtotal</th>
+                </tr>
+            </thead>
+            <tbody>
+                {filas_tabla}
+            </tbody>
+        </table>
+        <div class="total">
+            TOTAL: $ {total:,.2f}
+        </div>
+        <div class="footer">
+            <p>Presupuesto válido por 5 días. Contacto: {WHATSAPP_NUM}</p>
+            <p>¡Gracias por elegirnos!</p>
+        </div>
+    </body>
+    </html>
+    """
+    return html
+
 # --- LÓGICA DE INTERFAZ ---
 
 if es_cliente:
+    # (Se mantiene igual que antes)
     st.title("🛒 Catálogo AF Accesorios")
     busqueda = st.text_input("Buscar producto...", "").upper()
     df_ver = df_stock[df_stock["Accesorio"].str.contains(busqueda, na=False)]
@@ -61,28 +126,20 @@ else:
     menu = ["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre de Caja"]
     choice = st.tabs(menu)
 
-    with choice[0]: # PESTAÑA STOCK ÚNICA
+    with choice[0]: # STOCK
         st.header("Inventario Actual")
-        
         if not df_stock.empty:
-            # Limpieza para cálculos
             df_calc = df_stock.copy()
             for col in ["Stock", "Costo Base", "Lista 1 (Cheques)", "Lista 2 (Efectivo)"]:
                 df_calc[col] = pd.to_numeric(df_calc[col], errors='coerce').fillna(0)
-
-            # Las 3 sumas que pediste
             total_costo = (df_calc["Costo Base"] * df_calc["Stock"]).sum()
             total_l1 = (df_calc["Lista 1 (Cheques)"] * df_calc["Stock"]).sum()
             total_l2 = (df_calc["Lista 2 (Efectivo)"] * df_calc["Stock"]).sum()
-
             c1, c2, c3 = st.columns(3)
             c1.metric("Importe Stock (Costo)", f"$ {total_costo:,.2f}")
             c2.metric("Total Lista 1", f"$ {total_l1:,.2f}")
             c3.metric("Total Lista 2", f"$ {total_l2:,.2f}")
-            
             st.divider()
-        
-        # Tabla de abajo
         st.dataframe(df_stock, use_container_width=True, hide_index=True)
 
     with choice[1]: # LOTE
@@ -117,7 +174,6 @@ else:
                 sel_cli = st.selectbox("Seleccionar Cliente:", df_clientes["Nombre"].tolist(), key="sel_cli_vista")
                 saldo = df_clientes[df_clientes["Nombre"] == sel_cli]["Saldo"].values[0]
                 st.metric(f"Saldo de {sel_cli}", f"$ {saldo:,.2f}")
-                
                 monto_pago = st.number_input("Registrar Pago/Entrega $:", min_value=0.0, key="pago_cli")
                 if st.button("Confirmar Pago"):
                     df_clientes.loc[df_clientes["Nombre"] == sel_cli, "Saldo"] -= monto_pago
@@ -125,9 +181,9 @@ else:
                     st.success("Saldo actualizado")
                     st.rerun()
 
-    with choice[4]: # PRESUPUESTADOR
+    with choice[4]: # PRESUPUESTADOR MEJORADO
         st.header("📄 Generador de Presupuestos")
-        cliente_p = st.selectbox("Seleccionar Cliente para el presupuesto:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cli_presu")
+        cliente_p = st.selectbox("Seleccionar Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cli_presu")
         st.divider()
         col_p1, col_p2, col_p3 = st.columns([2, 1, 1])
         with col_p1:
@@ -147,9 +203,41 @@ else:
             st.table(df_car)
             total = df_car["Subtotal"].sum()
             st.write(f"### TOTAL PARA {cliente_p}: $ {total:,.2f}")
-            if st.button("Limpiar Presupuesto"):
-                st.session_state.carrito = []
-                st.rerun()
+            
+            cp1, cp2, cp3 = st.columns(3)
+            
+            with cp1:
+                # BOTÓN DESCARGAR
+                html_res = generar_html_presupuesto(cliente_p, st.session_state.carrito, total, lista_p)
+                b64 = base64.b64encode(html_res.encode()).decode()
+                href = f'<a href="data:text/html;base64,{b64}" download="presupuesto_{cliente_p}.html" style="text-decoration:none;"><button style="width:100%; height:40px; border-radius:5px; background-color:#F0F2F6; border:1px solid #dcdde1; cursor:pointer;">📥 Descargar Presupuesto</button></a>'
+                st.markdown(href, unsafe_allow_html=True)
+
+            with cp2:
+                # BOTÓN ORDEN DE TRABAJO
+                if st.button("✅ Confirmar Orden de Trabajo", use_container_width=True):
+                    # 1. Descontar Stock y 2. Actualizar Saldo
+                    for item in st.session_state.carrito:
+                        df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] -= item["Cant"]
+                    
+                    if cliente_p != "Consumidor Final":
+                        df_clientes.loc[df_clientes["Nombre"] == cliente_p, "Saldo"] += total
+                        df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
+                    
+                    df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
+                    
+                    # Registrar Movimiento
+                    nuevo_mov = pd.DataFrame([[datetime.now().strftime("%d/%m/%Y"), cliente_p, "VENTA", total, f"Venta de {len(st.session_state.carrito)} items"]], columns=df_movs.columns)
+                    pd.concat([df_movs, nuevo_mov]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
+                    
+                    st.session_state.carrito = []
+                    st.success("Orden Procesada: Stock descontado y Saldo actualizado.")
+                    st.rerun()
+
+            with cp3:
+                if st.button("🗑️ Limpiar", use_container_width=True):
+                    st.session_state.carrito = []
+                    st.rerun()
 
     with choice[5]: # ÓRDENES
         st.header("📋 Órdenes de Trabajo")
@@ -160,9 +248,7 @@ else:
         col_z1, col_z2 = st.columns(2)
         total_stock_c = (df_stock["Stock"] * df_stock["Costo Base"]).sum()
         total_deuda = df_clientes["Saldo"].sum()
-        
         col_z1.metric("Valor del Stock (Costo)", f"$ {total_stock_c:,.2f}")
         col_z2.metric("Total Deuda Clientes", f"$ {total_deuda:,.2f}")
-        
         st.subheader("Últimos Movimientos")
         st.dataframe(df_movs.tail(10), use_container_width=True)
