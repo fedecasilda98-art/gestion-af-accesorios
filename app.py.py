@@ -3,7 +3,7 @@ import pandas as pd
 import os
 from datetime import datetime
 import re
-import base64
+from fpdf import FPDF
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Gestión AF Accesorios", layout="wide", initial_sidebar_state="collapsed")
@@ -37,69 +37,57 @@ df_movs = cargar_datos(ARCHIVO_MOVIMIENTOS, ["Fecha", "Cliente", "Tipo", "Monto"
 if "carrito" not in st.session_state:
     st.session_state.carrito = []
 
-# --- FUNCIÓN DE FORMATO PDF (SEGÚN TU MODELO) ---
-def generar_html_presupuesto(cliente, carrito, total):
-    fecha_formateada = datetime.now().strftime("%d/%m/%Y %H:%M")
+# --- CLASE PARA GENERAR EL PDF CON TU FORMATO ---
+class PDF(FPDF):
+    def header(self):
+        self.set_font("Helvetica", "B", 16)
+        self.cell(0, 10, "ACCESORIOS DE ALUMINIO", ln=True) # 
+        self.ln(5)
+
+def generar_pdf_binario(cliente, carrito, total):
+    pdf = PDF()
+    pdf.add_page()
     
-    filas_tabla = ""
+    # Información de Cliente y Fecha
+    pdf.set_font("Helvetica", "", 12)
+    pdf.cell(0, 7, f"Cliente: {cliente}", ln=True) # 
+    pdf.cell(0, 7, f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True) # 
+    
+    pdf.ln(10)
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 10, "PRESUPUESTO", ln=True, align="C") # 
+    pdf.ln(5)
+    
+    # Encabezados de Tabla 
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.cell(100, 10, "Articulo", border=0)
+    pdf.cell(20, 10, "Cant.", border=0, align="C")
+    pdf.cell(35, 10, "P. Unit", border=0, align="R")
+    pdf.cell(35, 10, "Subtotal", border=0, align="R")
+    pdf.ln(10)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    
+    # Filas de Productos 
+    pdf.set_font("Helvetica", "", 10)
     for item in carrito:
-        filas_tabla += f"""
-        <tr>
-            <td style="border: none; padding: 8px;">{item['Producto']}</td>
-            <td style="border: none; padding: 8px; text-align: center;">{item['Cant']}</td>
-            <td style="border: none; padding: 8px; text-align: right;">$ {item['Precio U.']:,.2f}</td>
-            <td style="border: none; padding: 8px; text-align: right;">$ {item['Subtotal']:,.2f}</td>
-        </tr>
-        """
+        pdf.cell(100, 8, str(item['Producto']), border=0)
+        pdf.cell(20, 8, str(item['Cant']), border=0, align="C")
+        pdf.cell(35, 8, f"$ {item['Precio U.']:,.2f}", border=0, align="R")
+        pdf.cell(35, 8, f"$ {item['Subtotal']:,.2f}", border=0, align="R")
+        pdf.ln(8)
     
-    html = f"""
-    <html>
-    <head>
-        <style>
-            body {{ font-family: 'Helvetica', sans-serif; padding: 40px; color: #000; }}
-            .header {{ margin-bottom: 20px; }}
-            .title-box {{ font-weight: bold; font-size: 24px; margin-bottom: 5px; }}
-            .client-info {{ margin-bottom: 20px; font-size: 16px; }}
-            .presu-label {{ font-weight: bold; font-size: 20px; text-align: center; margin-top: 30px; margin-bottom: 20px; }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
-            th {{ border-bottom: 2px solid #000; border-top: 2px solid #000; padding: 10px; text-align: left; background-color: #fff; }}
-            .total-label {{ text-align: right; padding-right: 20px; }}
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <div class="title-box">ACCESORIOS DE ALUMINIO</div>
-        </div>
-        <div class="client-info">
-            <strong>Cliente:</strong> {cliente}<br>
-            <strong>Fecha:</strong> {fecha_formateada}
-        </div>
-        <div class="presu-label">PRESUPUESTO</div>
-        <table>
-            <thead>
-                <tr>
-                    <th style="text-align: left;">Articulo</th>
-                    <th style="text-align: center;">Cant.</th>
-                    <th style="text-align: right;">P. Unit</th>
-                    <th style="text-align: right;">Subtotal</th>
-                </tr>
-            </thead>
-            <tbody>
-                {filas_tabla}
-                <tr>
-                    <td colspan="2" style="border-top: 2px solid #000;"></td>
-                    <td class="total-label" style="border-top: 2px solid #000; padding: 10px;">TOTAL:</td>
-                    <td style="border-top: 2px solid #000; text-align: right; padding: 10px; font-weight: bold;">$ {total:,.2f}</td>
-                </tr>
-            </tbody>
-        </table>
-    </body>
-    </html>
-    """
-    return html
+    # Total Final 
+    pdf.ln(5)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(120, 10, "", border=0)
+    pdf.cell(35, 10, "TOTAL:", border=0, align="R")
+    pdf.cell(35, 10, f"$ {total:,.2f}", border=0, align="R")
+    
+    return pdf.output()
 
 # --- LÓGICA DE INTERFAZ ---
-
 if es_cliente:
     st.title("🛒 Catálogo AF Accesorios")
     busqueda = st.text_input("Buscar producto...", "").upper()
@@ -142,13 +130,13 @@ else:
     with choice[1]: # LOTE
         st.header("🚚 Carga por Lote")
         df_lote_base = pd.DataFrame(columns=["articulo", "rubro", "cantidad", "costos", "flete", "articulo existente/nuevo"])
-        ed_lote = st.data_editor(df_lote_base, num_rows="dynamic", use_container_width=True, key="editor_lote")
+        ed_lote = st.data_editor(df_lote_base, num_rows="dynamic", use_container_width=True, key="ed_lote")
         if st.button("Actualizar Stock", key="btn_lote"):
             st.success("Mercadería ingresada.")
 
     with choice[2]: # MAESTRO
         st.header("⚙️ Maestro de Artículos")
-        df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True, key="editor_maestro")
+        df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True, key="ed_maestro")
         if st.button("Guardar Cambios Maestro", key="btn_maestro"):
             df_ed.to_csv(ARCHIVO_ARTICULOS, index=False)
             st.success("¡Base de datos actualizada!")
@@ -161,7 +149,7 @@ else:
             n_cli = st.text_input("Nombre", key="n_cli_reg")
             t_cli = st.text_input("Teléfono", key="t_cli_reg")
             l_cli = st.text_input("Localidad", key="l_cli_reg")
-            if st.button("Registrar Cliente", key="btn_reg_cli"):
+            if st.button("Registrar Cliente", key="btn_reg"):
                 nuevo = pd.DataFrame([[n_cli, t_cli, l_cli, 0.0]], columns=df_clientes.columns)
                 pd.concat([df_clientes, nuevo]).to_csv(ARCHIVO_CLIENTES, index=False)
                 st.rerun()
@@ -189,7 +177,7 @@ else:
         with col_p3:
             lista_p = st.selectbox("Lista:", ["Lista 1 (Cheques)", "Lista 2 (Efectivo)"], key="lista_presu")
 
-        if st.button("Agregar al Presupuesto", key="btn_add_car"):
+        if st.button("Agregar al Presupuesto", key="btn_add"):
             precio_u = df_stock[df_stock["Accesorio"] == item_p][lista_p].values[0]
             st.session_state.carrito.append({"Producto": item_p, "Cant": cant_p, "Precio U.": precio_u, "Subtotal": precio_u * cant_p})
             st.rerun()
@@ -197,28 +185,33 @@ else:
         if st.session_state.carrito:
             df_car = pd.DataFrame(st.session_state.carrito)
             st.table(df_car)
-            total = df_car["Subtotal"].sum()
-            st.write(f"### TOTAL PARA {cliente_p}: $ {total:,.2f}")
+            total_final = df_car["Subtotal"].sum()
             
             cp1, cp2, cp3 = st.columns(3)
             with cp1:
-                html_res = generar_html_presupuesto(cliente_p, st.session_state.carrito, total)
-                b64 = base64.b64encode(html_res.encode()).decode()
-                href = f'<a href="data:text/html;base64,{b64}" download="presupuesto_{cliente_p}.html"><button style="width:100%; height:40px; border-radius:5px; background-color:#F0F2F6; border:1px solid #dcdde1; cursor:pointer;">📥 Descargar Presupuesto</button></a>'
-                st.markdown(href, unsafe_allow_html=True)
+                # DESCARGA PDF DIRECTA
+                pdf_bytes = generar_pdf_binario(cliente_p, st.session_state.carrito, total_final)
+                st.download_button(
+                    label="📥 DESCARGAR PDF",
+                    data=pdf_bytes,
+                    file_name=f"Presupuesto_{cliente_p}.pdf",
+                    mime="application/pdf",
+                    key="btn_pdf",
+                    use_container_width=True
+                )
             with cp2:
-                if st.button("✅ Confirmar Orden", key="btn_conf_orden", use_container_width=True):
+                if st.button("✅ ORDEN DE TRABAJO", key="btn_orden", use_container_width=True):
                     for item in st.session_state.carrito:
                         df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] -= item["Cant"]
                     if cliente_p != "Consumidor Final":
-                        df_clientes.loc[df_clientes["Nombre"] == cliente_p, "Saldo"] += total
+                        df_clientes.loc[df_clientes["Nombre"] == cliente_p, "Saldo"] += total_final
                         df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
                     df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
                     st.session_state.carrito = []
                     st.success("Orden Procesada.")
                     st.rerun()
             with cp3:
-                if st.button("🗑️ Limpiar", key="btn_clear_car", use_container_width=True):
+                if st.button("🗑️ LIMPIAR", key="btn_clear", use_container_width=True):
                     st.session_state.carrito = []
                     st.rerun()
 
