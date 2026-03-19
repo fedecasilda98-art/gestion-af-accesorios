@@ -26,7 +26,7 @@ def cargar_datos(archivo, columnas):
         try:
             df = pd.read_csv(archivo)
             df.columns = df.columns.str.strip()
-            # Asegurar que las columnas existan si el archivo es viejo
+            # Asegurar que existan todas las columnas necesarias
             for col in columnas:
                 if col not in df.columns: df[col] = ""
             return df
@@ -120,24 +120,37 @@ else:
             st.divider()
         st.dataframe(df_stock, use_container_width=True, hide_index=True)
 
+    with tabs[1]: # LOTE (RECUPERADO)
+        st.header("🚚 Carga por Lote")
+        df_lote_base = pd.DataFrame(columns=["articulo", "rubro", "cantidad", "costos", "flete", "articulo existente/nuevo"])
+        st.data_editor(df_lote_base, num_rows="dynamic", use_container_width=True, key="ed_lote_full")
+        if st.button("Actualizar Stock por Lote"):
+            st.success("Mercadería ingresada (Lógica de procesamiento pendiente de vincular a CSV)")
+
     with tabs[2]: # MAESTRO
         st.header("⚙️ Maestro de Artículos")
-        df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True, key="ed_maestro")
+        df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True, key="ed_maestro_full")
         if st.button("Guardar Cambios Maestro"):
             df_ed.to_csv(ARCHIVO_ARTICULOS, index=False)
             st.success("¡Base de datos actualizada!")
 
-    with tabs[3]: # CTA CTE MEJORADA
-        st.header("👥 Gestión de Cuentas Corrientes")
+    with tabs[3]: # CTA CTE (RECUPERADO COMPLETO + CHEQUES)
+        st.header("👥 Gestión de Clientes y Cuentas")
         col_c1, col_c2 = st.columns([1, 2])
         with col_c1:
-            st.subheader("Nuevo Cliente / Estado")
+            st.subheader("Nuevo Cliente")
+            n_cli = st.text_input("Nombre", key="reg_nom")
+            t_cli = st.text_input("Teléfono", key="reg_tel")
+            l_cli = st.text_input("Localidad", key="reg_loc")
+            if st.button("Registrar Cliente"):
+                nuevo = pd.DataFrame([[n_cli, t_cli, l_cli, 0.0]], columns=df_clientes.columns)
+                pd.concat([df_clientes, nuevo]).to_csv(ARCHIVO_CLIENTES, index=False)
+                st.success("Cliente registrado"); st.rerun()
+            
+            st.divider()
+            st.subheader("Registrar Pago")
             if not df_clientes.empty:
-                sel_cli = st.selectbox("Seleccionar Cliente:", df_clientes["Nombre"].tolist(), key="sel_cli")
-                idx_cli = df_clientes[df_clientes["Nombre"] == sel_cli].index[0]
-                st.metric(f"Saldo de {sel_cli}", f"$ {df_clientes.at[idx_cli, 'Saldo']:,.2f}")
-                st.divider()
-                st.subheader("Registrar Pago")
+                sel_cli = st.selectbox("Cliente:", df_clientes["Nombre"].tolist(), key="sel_cli_pago")
                 monto_pago = st.number_input("Monto $:", min_value=0.0)
                 metodo = st.selectbox("Método:", ["Efectivo", "Transferencia", "Cheque"])
                 detalle_pago = ""
@@ -149,6 +162,7 @@ else:
                 else: detalle_pago = st.text_input("Nota adicional:")
 
                 if st.button("Confirmar Pago"):
+                    idx_cli = df_clientes[df_clientes["Nombre"] == sel_cli].index[0]
                     df_clientes.at[idx_cli, "Saldo"] -= monto_pago
                     df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
                     nuevo_mov = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": sel_cli, "Tipo": "PAGO", "Monto": monto_pago, "Metodo": metodo, "Detalle": detalle_pago}])
@@ -158,18 +172,19 @@ else:
         with col_c2:
             st.subheader("Historial de Movimientos")
             if not df_clientes.empty:
+                st.metric(f"Saldo Actual de {sel_cli}", f"$ {df_clientes[df_clientes['Nombre']==sel_cli]['Saldo'].values[0]:,.2f}")
                 hist = df_movs[df_movs["Cliente"] == sel_cli].sort_index(ascending=False)
                 st.dataframe(hist, use_container_width=True, hide_index=True)
 
     with tabs[4]: # PRESUPUESTADOR
         st.header("📄 Generador de Presupuestos")
-        cliente_p = st.selectbox("Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cli_p")
+        cliente_p = st.selectbox("Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cli_pres")
         p1, p2, p3 = st.columns([2, 1, 1])
-        with p1: item_p = st.selectbox("Artículo:", df_stock["Accesorio"].tolist(), key="itm_p")
-        with p2: cant_p = st.number_input("Cant:", min_value=1, value=1, key="cnt_p")
-        with p3: lista_p = st.selectbox("Lista:", ["Lista 1 (Cheques)", "Lista 2 (Efectivo)"], key="lst_p")
+        with p1: item_p = st.selectbox("Artículo:", df_stock["Accesorio"].tolist(), key="itm_pres")
+        with p2: cant_p = st.number_input("Cant:", min_value=1, value=1, key="cnt_pres")
+        with p3: lista_p = st.selectbox("Lista:", ["Lista 1 (Cheques)", "Lista 2 (Efectivo)"], key="lst_pres")
 
-        if st.button("Agregar"):
+        if st.button("Agregar al Carrito"):
             precio_u = df_stock[df_stock["Accesorio"] == item_p][lista_p].values[0]
             st.session_state.carrito.append({"Producto": item_p, "Cant": cant_p, "Precio U.": precio_u, "Subtotal": precio_u * cant_p})
             st.rerun()
@@ -196,7 +211,12 @@ else:
             with b3:
                 if st.button("🗑️ LIMPIAR", use_container_width=True): st.session_state.carrito = []; st.rerun()
 
-    with tabs[6]: # CIERRE
+    with tabs[5]: # ÓRDENES (RECUPERADO)
+        st.header("📋 Órdenes de Trabajo")
+        st.dataframe(df_movs, use_container_width=True, hide_index=True)
+
+    with tabs[6]: # CIERRE (RECUPERADO)
         st.header("🏁 Cierre de Caja")
-        st.metric("Valor del Stock (Costo)", f"$ {(df_stock['Stock'] * df_stock['Costo Base']).sum():,.2f}")
-        st.metric("Total Deuda Clientes", f"$ {df_clientes['Saldo'].sum():,.2f}")
+        z1, z2 = st.columns(2)
+        z1.metric("Valor del Stock (Costo)", f"$ {(df_stock['Stock'] * pd.to_numeric(df_stock['Costo Base'], errors='coerce').fillna(0)).sum():,.2f}")
+        z2.metric("Total Deuda Clientes", f"$ {df_clientes['Saldo'].sum():,.2f}")
