@@ -26,6 +26,7 @@ def cargar_datos(archivo, columnas):
         try:
             df = pd.read_csv(archivo)
             df.columns = df.columns.str.strip()
+            # Escudo de columnas: asegura que Dirección y otras existan
             for col in columnas:
                 if col not in df.columns: 
                     df[col] = 0.0 if any(x in col for x in ["Saldo", "Monto", "Lista", "Costo"]) else ""
@@ -34,7 +35,8 @@ def cargar_datos(archivo, columnas):
     return pd.DataFrame(columns=columnas)
 
 COLS_ARTICULOS = ["Rubro", "Proveedor", "Accesorio", "Stock", "Costo Base", "Flete", "% Ganancia", "Lista 1 (Cheques)", "Lista 2 (Efectivo)", "Descripcion"]
-COLS_CLIENTES = ["Nombre", "Tel", "Localidad", "Saldo"]
+# Agregamos "Direccion" a la lista oficial de columnas
+COLS_CLIENTES = ["Nombre", "Tel", "Localidad", "Direccion", "Saldo"]
 COLS_MOVS = ["Fecha", "Cliente", "Tipo", "Monto", "Metodo", "Detalle"]
 
 df_stock = cargar_datos(ARCHIVO_ARTICULOS, COLS_ARTICULOS)
@@ -128,8 +130,6 @@ else:
         st.header("🚚 Carga por Lote")
         df_lote_base = pd.DataFrame(columns=["articulo", "rubro", "cantidad", "costos", "flete", "articulo existente/nuevo"])
         st.data_editor(df_lote_base, num_rows="dynamic", use_container_width=True, key="ed_lote_full")
-        if st.button("Actualizar Stock por Lote"):
-            st.info("Procesamiento de lote activo.")
 
     with tabs[2]: # MAESTRO
         st.header("⚙️ Maestro de Artículos")
@@ -138,19 +138,24 @@ else:
             df_ed.to_csv(ARCHIVO_ARTICULOS, index=False)
             st.success("¡Base de datos actualizada!")
 
-    with tabs[3]: # CTA CTE - MEJORADA SEGÚN PEDIDO
+    with tabs[3]: # CTA CTE - DIRECCIÓN AGREGADA
         st.header("👥 Gestión de Cuentas Corrientes")
         
-        # 1. Seleccionador de Cliente Global para la pestaña
         if not df_clientes.empty:
             cliente_seleccionado = st.selectbox("🔍 Buscar Cliente para ver Estado e Historial:", df_clientes["Nombre"].tolist(), key="busqueda_global_cli")
             
             idx_c = df_clientes[df_clientes["Nombre"] == cliente_seleccionado].index[0]
             saldo_raw = df_clientes.at[idx_c, "Saldo"]
-            # Corrección para evitar el -0.0
             saldo_mostrable = 0.0 if abs(saldo_raw) < 1e-9 else saldo_raw
             
-            st.metric(f"Saldo Actual de {cliente_seleccionado}", f"$ {saldo_mostrable:,.2f}")
+            # Mostrar datos del cliente seleccionado
+            c_info1, c_info2, c_info3 = st.columns(3)
+            c_info1.metric("Saldo Pendiente", f"$ {saldo_mostrable:,.2f}")
+            c_info2.write(f"📞 **Tel:** {df_clientes.at[idx_c, 'Tel']}")
+            c_info2.write(f"📍 **Localidad:** {df_clientes.at[idx_c, 'Localidad']}")
+            c_info3.write(f"🏠 **Dirección:** {df_clientes.at[idx_c, 'Direccion']}")
+            
+            st.divider()
             
             col_movs, col_ops = st.columns([2, 1])
             
@@ -184,17 +189,19 @@ else:
                         st.warning("El monto debe ser mayor a 0.")
 
         st.divider()
-        st.subheader("Añadir Nuevo Cliente al Sistema")
+        st.subheader("Añadir Nuevo Cliente")
         with st.expander("Abrir formulario de alta"):
-            c_n, c_t, c_l = st.columns(3)
+            c_n, c_t, c_l, c_d = st.columns(4)
             new_n = c_n.text_input("Nombre completo")
             new_t = c_t.text_input("Teléfono")
             new_l = c_l.text_input("Localidad")
+            new_d = c_d.text_input("Dirección Exacta")
             if st.button("Dar de Alta"):
                 if new_n:
-                    nuevo_df = pd.DataFrame([[new_n, new_t, new_l, 0.0]], columns=COLS_CLIENTES)
+                    # Guardamos incluyendo la nueva columna Dirección
+                    nuevo_df = pd.DataFrame([[new_n, new_t, new_l, new_d, 0.0]], columns=COLS_CLIENTES)
                     pd.concat([df_clientes, nuevo_df], ignore_index=True).to_csv(ARCHIVO_CLIENTES, index=False)
-                    st.success(f"{new_n} agregado."); st.rerun()
+                    st.success(f"Cliente {new_n} agregado."); st.rerun()
 
     with tabs[4]: # PRESUPUESTADOR
         st.header("📄 Generador de Presupuestos")
