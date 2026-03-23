@@ -2,13 +2,12 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-import os
 from datetime import datetime
 import re
 from fpdf import FPDF
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Gestión AF Accesorios", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Gestión AF Accesorios", layout="wide")
 
 # --- CONEXIÓN A GOOGLE SHEETS ---
 @st.cache_resource
@@ -54,7 +53,7 @@ def guardar_hoja(hoja, df):
     hoja.clear()
     hoja.update([df.columns.values.tolist()] + df.values.tolist())
 
-# Definición de Columnas
+# Columnas exactas para las pestañas
 COLS_ART = ["Rubro", "Proveedor", "Accesorio", "Stock", "Costo Base", "Flete", "% Ganancia", "Lista 1 (Cheques)", "Lista 2 (Efectivo)", "Descripcion"]
 COLS_CLI = ["Nombre", "Tel", "Localidad", "Direccion", "Saldo"]
 COLS_MOV = ["Fecha", "Cliente", "Tipo", "Monto", "Metodo", "Detalle"]
@@ -68,8 +67,7 @@ if "carrito" not in st.session_state:
 
 # --- UTILIDADES ---
 def formatear_moneda(valor):
-    v = round(float(valor), 2)
-    return f"$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"$ {round(float(valor), 2):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 class PDF(FPDF):
     def header(self):
@@ -121,62 +119,79 @@ with tabs[0]: # STOCK
 
 with tabs[1]: # LOTE
     st.header("🚚 Carga por Lote")
-    st.write("Pegá aquí los datos para actualizar stock de forma masiva.")
+    st.write("Pegá datos de Excel aquí para actualizar masivamente.")
     df_lote_base = pd.DataFrame(columns=["articulo", "rubro", "cantidad", "costos", "flete"])
     ed_lote = st.data_editor(df_lote_base, num_rows="dynamic", use_container_width=True)
-    
-    if st.button("Procesar Carga por Lote"):
+    if st.button("Procesar Lote"):
         for _, fila in ed_lote.iterrows():
             idx = df_stock[df_stock["Accesorio"] == fila["articulo"]].index
             if not idx.empty:
                 df_stock.at[idx[0], "Stock"] += float(fila["cantidad"])
                 df_stock.at[idx[0], "Costo Base"] = float(fila["costos"])
                 df_stock.at[idx[0], "Flete"] = float(fila["flete"])
-        guardar_hoja(sh_stock, df_stock)
-        st.success("¡Stock actualizado por lote!"); st.rerun()
+        guardar_hoja(sh_stock, df_stock); st.success("Stock actualizado!"); st.rerun()
 
 with tabs[2]: # MAESTRO
-    st.header("Editor Maestro")
+    st.header("Editor Maestro de Artículos")
     df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True, num_rows="dynamic")
-    if st.button("Guardar Maestro"):
-        guardar_hoja(sh_stock, df_ed); st.success("¡Guardado!"); st.rerun()
+    if st.button("Guardar Maestro en Google Sheets"):
+        guardar_hoja(sh_stock, df_ed); st.success("¡Datos guardados!"); st.rerun()
 
-with tabs[3]: # CTA CTE
-    st.header("Cuentas Corrientes")
+with tabs[3]: # CTA CTE RECARGADO
+    st.header("Gestión de Cuentas Corrientes")
     if not df_clientes.empty:
-        cli_sel = st.selectbox("Seleccionar Cliente:", df_clientes["Nombre"].tolist())
-        idx_c = df_clientes[df_clientes["Nombre"] == cli_sel].index[0]
-        st.metric("Saldo", formatear_moneda(df_clientes.at[idx_c, "Saldo"]))
+        c1, c2 = st.columns(2)
+        with c1:
+            sel_cli = st.selectbox("Seleccionar Cliente:", df_clientes["Nombre"].tolist())
+            idx_c = df_clientes[df_clientes["Nombre"] == sel_cli].index[0]
+            st.metric("Saldo Actual", formatear_moneda(df_clientes.at[idx_c, "Saldo"]))
+            with st.expander("📝 Editar Contacto"):
+                u_tel = st.text_input("Tel:", df_clientes.at[idx_c, "Tel"])
+                u_loc = st.text_input("Localidad:", df_clientes.at[idx_c, "Localidad"])
+                if st.button("Actualizar Contacto"):
+                    df_clientes.at[idx_c, "Tel"] = u_tel
+                    df_clientes.at[idx_c, "Localidad"] = u_loc
+                    guardar_hoja(sh_clientes, df_clientes); st.success("Actualizado!"); st.rerun()
+        with c2:
+            st.subheader("➕ Nuevo Cliente")
+            n_n = st.text_input("Nombre y Apellido")
+            if st.button("Crear Ficha"):
+                nueva = pd.DataFrame([[n_n, "", "", "", 0.0]], columns=COLS_CLI)
+                guardar_hoja(sh_clientes, pd.concat([df_clientes, nueva], ignore_index=True)); st.rerun()
         
-        hist = df_movs[df_movs["Cliente"] == cli_sel].sort_index(ascending=False)
+        st.divider()
+        st.subheader("Historial y Reimpresión")
+        hist = df_movs[df_movs["Cliente"] == sel_cli].sort_index(ascending=False)
         for i, row in hist.iterrows():
-            with st.expander(f"{row['Fecha']} | {row['Tipo']} | {formatear_moneda(row['Monto'])}"):
+            emoji = "🔴" if row["Tipo"]=="VENTA" else "🟢" if row["Tipo"]=="PAGO" else "🔵"
+            with st.expander(f"{emoji} {row['Fecha']} - {row['Tipo']} - {formatear_moneda(row['Monto'])}"):
                 st.write(f"Detalle: {row['Detalle']}")
                 if row["Tipo"] in ["VENTA", "N. CRÉDITO"]:
-                    temp_car = []
+                    items_r = []
                     for it in str(row["Detalle"]).split(", "):
                         m = re.search(r"(\d+)x (.*) \(á \$ (.*)\)", it.replace(".", "").replace(",", "."))
-                        if m: q, p, pu = m.groups(); temp_car.append({"Producto": p, "Cant": int(q), "Precio U.": float(pu), "Subtotal": int(q)*float(pu)})
-                    if temp_car:
-                        pdf_r = generar_pdf_binario(cli_sel, temp_car, row["Monto"], df_clientes, row["Tipo"])
-                        st.download_button(f"🖨️ Reimprimir {i}", pdf_r, f"Compro_{i}.pdf", "application/pdf")
+                        if m: q, p, pu = m.groups(); items_r.append({"Producto": p, "Cant": int(q), "Precio U.": float(pu), "Subtotal": int(q)*float(pu)})
+                    if items_r:
+                        pdf_re = generar_pdf_binario(sel_cli, items_r, row["Monto"], df_clientes, row["Tipo"])
+                        st.download_button(f"🖨️ Descargar Compro {i}", pdf_re, f"Doc_{i}.pdf", "application/pdf")
         
-        m_p = st.number_input("Pago $:", min_value=0.0)
-        if st.button("Pagar"):
-            df_clientes.at[idx_c, "Saldo"] = round(df_clientes.at[idx_c, "Saldo"] - m_p, 2)
+        st.subheader("💵 Registrar Pago")
+        monto_p = st.number_input("Monto Recibido $:", min_value=0.0)
+        if st.button("Confirmar Cobro"):
+            df_clientes.at[idx_c, "Saldo"] = round(df_clientes.at[idx_c, "Saldo"] - monto_p, 2)
             guardar_hoja(sh_clientes, df_clientes)
-            n_m = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": cli_sel, "Tipo": "PAGO", "Monto": m_p, "Metodo": "Efectivo", "Detalle": "Pago"}])
-            guardar_hoja(sh_movs, pd.concat([df_movs, n_m])); st.rerun()
+            n_mov = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": sel_cli, "Tipo": "PAGO", "Monto": monto_p, "Metodo": "Efectivo", "Detalle": "Pago de cliente"}])
+            guardar_hoja(sh_movs, pd.concat([df_movs, n_mov])); st.rerun()
 
-with tabs[4]: # PRESUPUESTADOR
-    st.header("Presupuestador / Venta / Notas de Crédito")
+with tabs[4]: # PRESU / VENTA / NOTAS CRÉDITO
+    st.header("Generador de Operaciones")
     cli_p = st.selectbox("Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"])
     c1, c2, c3 = st.columns([2, 1, 1])
     with c1: i_p = st.selectbox("Artículo:", df_stock["Accesorio"].tolist())
-    with c2: q_p = st.number_input("Cant:", min_value=1, value=1)
+    with c2: q_p = st.number_input("Cantidad:", min_value=1, value=1)
     with c3: l_p = st.selectbox("Lista:", ["Lista 1 (Cheques)", "Lista 2 (Efectivo)"])
 
-    if st.button("Añadir"):
+    if st.button("Añadir al Carrito"):
         p_u = round(df_stock[df_stock["Accesorio"] == i_p][l_p].values[0], 2)
         st.session_state.carrito.append({"Producto": i_p, "Cant": q_p, "Precio U.": p_u, "Subtotal": round(p_u * q_p, 2)})
         st.rerun()
@@ -185,36 +200,40 @@ with tabs[4]: # PRESUPUESTADOR
         df_c = pd.DataFrame(st.session_state.carrito)
         st.table(df_c)
         total_f = round(df_c["Subtotal"].sum(), 2)
+        st.subheader(f"Total: {formatear_moneda(total_f)}")
         
         b1, b2, b3 = st.columns(3)
         with b1:
-            if st.button("✅ VENTA"):
-                for item in st.session_state.carrito: df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] -= item["Cant"]
+            if st.button("✅ REGISTRAR VENTA"):
+                for item in st.session_state.carrito:
+                    df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] -= item["Cant"]
                 guardar_hoja(sh_stock, df_stock)
                 idx_cp = df_clientes[df_clientes["Nombre"] == cli_p].index[0]
                 df_clientes.at[idx_cp, "Saldo"] = round(df_clientes.at[idx_cp, "Saldo"] + total_f, 2)
                 guardar_hoja(sh_clientes, df_clientes)
                 det = ", ".join([f"{i['Cant']}x {i['Producto']} (á {formatear_moneda(i['Precio U.'])})" for i in st.session_state.carrito])
                 guardar_hoja(sh_movs, pd.concat([df_movs, pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": cli_p, "Tipo": "VENTA", "Monto": total_f, "Metodo": "-", "Detalle": det}])]))
-                st.session_state.carrito = []; st.rerun()
+                st.session_state.carrito = []; st.success("Venta guardada!"); st.rerun()
         with b2:
-            if st.button("🔵 NOTA CRÉDITO"):
-                for item in st.session_state.carrito: df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] += item["Cant"]
+            if st.button("🔵 NOTA DE CRÉDITO"):
+                for item in st.session_state.carrito:
+                    df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] += item["Cant"]
                 guardar_hoja(sh_stock, df_stock)
                 idx_cp = df_clientes[df_clientes["Nombre"] == cli_p].index[0]
                 df_clientes.at[idx_cp, "Saldo"] = round(df_clientes.at[idx_cp, "Saldo"] - total_f, 2)
                 guardar_hoja(sh_clientes, df_clientes)
                 det = ", ".join([f"{i['Cant']}x {i['Producto']} (á {formatear_moneda(i['Precio U.'])})" for i in st.session_state.carrito])
                 guardar_hoja(sh_movs, pd.concat([df_movs, pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": cli_p, "Tipo": "N. CRÉDITO", "Monto": total_f, "Metodo": "-", "Detalle": det}])]))
-                st.session_state.carrito = []; st.rerun()
+                st.session_state.carrito = []; st.info("Stock devuelto y saldo restado"); st.rerun()
         with b3:
-            if st.button("🗑️ Limpiar"): st.session_state.carrito = []; st.rerun()
+            if st.button("🗑️ Limpiar Carrito"):
+                st.session_state.carrito = []; st.rerun()
 
 with tabs[5]: # MOVS
-    st.header("Historial Global")
+    st.header("Historial de Movimientos")
     st.dataframe(df_movs, use_container_width=True, hide_index=True)
 
 with tabs[6]: # CIERRE
-    st.header("Cierre")
-    st.metric("Valor Stock", formatear_moneda((df_stock['Stock'] * df_stock['Costo Base']).sum()))
-    st.metric("Deuda Clientes", formatear_moneda(df_clientes['Saldo'].sum()))
+    st.header("Resumen del Negocio")
+    st.metric("Valor del Stock", formatear_moneda((df_stock['Stock'] * df_stock['Costo Base']).sum()))
+    st.metric("Total a Cobrar (Clientes)", formatear_moneda(df_clientes['Saldo'].sum()))
