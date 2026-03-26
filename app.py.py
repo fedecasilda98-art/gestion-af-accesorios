@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 import re
 from fpdf import FPDF
+from io import BytesIO
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Gestión AF Accesorios", layout="wide", initial_sidebar_state="collapsed")
@@ -30,7 +31,6 @@ def cargar_datos(archivo, columnas):
             for col in columnas:
                 if col not in df.columns: 
                     df[col] = 0.0 if any(x in col for x in ["Saldo", "Monto", "Lista", "Costo"]) else ""
-            # Redondeo estricto a 2 decimales
             for col in df.columns:
                 if any(x in col for x in ["Saldo", "Monto", "Lista", "Costo", "Flete", "Stock"]):
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).round(2)
@@ -52,8 +52,10 @@ if "orden_lista" not in st.session_state: st.session_state.orden_lista = None
 
 # --- UTILIDADES DE FORMATO ---
 def formatear_moneda(valor):
-    v = round(float(valor), 2)
-    return f"$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    try:
+        v = round(float(valor), 2)
+        return f"$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except: return "$ 0,00"
 
 # --- CLASE PDF ---
 class PDF(FPDF):
@@ -107,9 +109,13 @@ def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRE
         pdf.ln(2); pdf.set_font("Helvetica", "B", 12)
         pdf.cell(155, 10, "TOTAL:", border=0, align="R")
         pdf.cell(35, 10, f"{formatear_moneda(total)}", border=1, align="R")
-        return pdf.output(dest='S').encode('latin-1', 'replace') # Fix para caracteres especiales
-    except Exception as e:
-        st.error(f"Error PDF: {e}")
+        
+        # Uso de Buffer para evitar errores en móviles/Streamlit Cloud
+        buffer = BytesIO()
+        pdf_out = pdf.output(dest='S').encode('latin-1', 'replace')
+        buffer.write(pdf_out)
+        return buffer.getvalue()
+    except:
         return None
 
 # --- INTERFAZ ---
@@ -153,7 +159,9 @@ else:
         st.header("⚙️ Maestro de Artículos")
         df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True, key="ed_maestro_full")
         if st.button("Guardar Cambios Maestro"):
-            df_ed.to_csv(ARCHIVO_ARTICULOS, index=False); st.success("¡Base de datos actualizada!"); st.rerun()
+            if df_ed is not None:
+                df_ed.to_csv(ARCHIVO_ARTICULOS, index=False)
+                st.success("¡Base de datos actualizada!"); st.rerun()
 
     with tabs[3]: # CTA CTE
         st.header("👥 Gestión de Cuentas Corrientes")
@@ -176,7 +184,6 @@ else:
                     with st.expander(f"{color} {row['Fecha']} | {row['Tipo']} | {formatear_moneda(row['Monto'])}"):
                         st.write(f"**Detalle:** {row['Detalle']}")
                         if row["Tipo"] in ["VENTA", "N. CRÉDITO"]:
-                            # Lógica para reconstruir carrito y reimprimir
                             items_raw = str(row["Detalle"]).split(", ")
                             temp_carrito = []
                             for it in items_raw:
@@ -186,7 +193,7 @@ else:
                                     temp_carrito.append({"Producto": prod, "Cant": int(cant), "Precio U.": float(pu), "Subtotal": int(cant)*float(pu)})
                             if temp_carrito:
                                 pdf_re = generar_pdf_binario(cli_sel, temp_carrito, row["Monto"], df_clientes, row["Tipo"])
-                                if pdf_re: st.download_button(f"🖨️ REIMPRIMIR {row['Tipo']}", pdf_re, f"Rei_{i}.pdf", "application/pdf", key=f"re_{i}")
+                                if pdf_re: st.download_button(f"🖨️ REIMPRIMIR", pdf_re, f"Rei_{i}.pdf", "application/pdf", key=f"re_{i}")
 
             with col_ops:
                 st.subheader("Registrar Pago")
@@ -250,9 +257,9 @@ else:
             b1, b2, b3, b4 = st.columns(4)
             with b1:
                 pdf_p = generar_pdf_binario(cli_p, st.session_state.carrito, t_f, df_clientes, "PRESUPUESTO")
-                if pdf_p: st.download_button("📥 DESCARGAR PRE.", pdf_p, f"Pre_{cli_p}.pdf", "application/pdf")
+                if pdf_p: st.download_button("📥 BAJAR PRE.", pdf_p, f"Pre_{cli_p}.pdf", "application/pdf")
             with b2:
-                if st.button("✅ ORDEN DE TRABAJO", use_container_width=True):
+                if st.button("✅ ORDEN", use_container_width=True):
                     det_prod = ", ".join([f"{item['Cant']}x {item['Producto']} (á {formatear_moneda(item['Precio U.'])})" for item in st.session_state.carrito])
                     for item in st.session_state.carrito:
                         df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] -= item["Cant"]
@@ -266,7 +273,7 @@ else:
                     st.session_state.orden_lista = generar_pdf_binario(cli_p, st.session_state.carrito, t_f, df_clientes, "ORDEN DE TRABAJO")
                     st.rerun()
             with b3:
-                if st.button("🔵 NOTA DE CRÉDITO", use_container_width=True):
+                if st.button("🔵 N. CRÉDITO", use_container_width=True):
                     det_prod = ", ".join([f"{item['Cant']}x {item['Producto']} (á {formatear_moneda(item['Precio U.'])})" for item in st.session_state.carrito])
                     for item in st.session_state.carrito:
                         df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] += item["Cant"]
@@ -280,11 +287,11 @@ else:
                     st.session_state.orden_lista = generar_pdf_binario(cli_p, st.session_state.carrito, t_f, df_clientes, "NOTA DE CRÉDITO")
                     st.rerun()
             with b4:
-                if st.button("🗑️ LIMPIAR TODO", use_container_width=True):
+                if st.button("🗑️ LIMPIAR", use_container_width=True):
                     st.session_state.carrito = []; st.session_state.orden_lista = None; st.rerun()
 
             if st.session_state.orden_lista:
-                st.download_button("⬇️ BAJAR COMPROBANTE FINAL", data=st.session_state.orden_lista, file_name=f"Comprobante_{cli_p}.pdf", type="primary")
+                st.download_button("⬇️ DESCARGAR", data=st.session_state.orden_lista, file_name=f"Final_{cli_p}.pdf", type="primary")
 
     with tabs[5]: # ÓRDENES
         st.header("📋 Historial Global")
@@ -294,5 +301,5 @@ else:
         st.header("🏁 Cierre de Caja")
         c1, c2 = st.columns(2)
         v_s = round((df_stock['Stock'] * df_stock['Costo Base']).sum(), 2)
-        c1.metric("Valor Total Stock (Costo)", formatear_moneda(v_s))
-        c2.metric("Total Deuda Clientes", formatear_moneda(df_clientes['Saldo'].sum()))
+        c1.metric("Valor Stock", formatear_moneda(v_s))
+        c2.metric("Deuda Clientes", formatear_moneda(df_clientes['Saldo'].sum()))
