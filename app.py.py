@@ -4,9 +4,10 @@ import os
 from datetime import datetime
 from fpdf import FPDF
 
-# --- CONFIGURACIÓN ---
+# --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="AF Accesorios - Gestión Pro", layout="wide", initial_sidebar_state="collapsed")
 
+# Archivos Base
 ARCHIVO_ARTICULOS = "lista_articulos_interna.csv"
 ARCHIVO_CLIENTES = "clientes_base.csv"
 ARCHIVO_MOVIMIENTOS = "movimientos_clientes.csv"
@@ -14,7 +15,7 @@ ARCHIVO_MOVIMIENTOS = "movimientos_clientes.csv"
 if "carrito" not in st.session_state: st.session_state.carrito = []
 if "venta_confirmada" not in st.session_state: st.session_state.venta_confirmada = False
 
-# --- MOTOR DE DATOS ---
+# --- CARGA DE DATOS ---
 def cargar_datos(archivo, columnas):
     if os.path.exists(archivo):
         try:
@@ -22,7 +23,7 @@ def cargar_datos(archivo, columnas):
             df.columns = df.columns.str.strip()
             for col in columnas:
                 if col not in df.columns:
-                    df[col] = 0.0 if any(x in col for x in ["Saldo", "Monto", "Stock"]) else ""
+                    df[col] = 0.0 if any(x in col for x in ["Saldo", "Monto", "Stock", "Lista", "Costo", "Flete"]) else ""
             return df[columnas]
         except: return pd.DataFrame(columns=columnas)
     return pd.DataFrame(columns=columnas)
@@ -35,7 +36,7 @@ def formatear_moneda(valor):
     try: return f"$ {float(valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except: return "$ 0,00"
 
-# --- MOTOR DE PDF (ESTILO AF ACCESORIOS) ---
+# --- MOTOR DE PDF (DISEÑO AF) ---
 class PDF(FPDF):
     def header(self):
         try: self.image('logo.jpg', 10, 8, 30)
@@ -71,11 +72,11 @@ def generar_pdf_af(cliente_n, carrito, total, tipo_doc="PRESUPUESTO"):
         pdf.cell(35, 8, "Subtotal", border=1, fill=True, align="R", ln=True)
         
         pdf.set_font("Helvetica", "", 9)
-        for it in carrito:
-            pdf.cell(100, 7, f" {it['Producto']}", border=1)
-            pdf.cell(20, 7, str(it['Cant']), border=1, align="C")
-            pdf.cell(35, 7, formatear_moneda(it['Precio U.']), border=1, align="R")
-            pdf.cell(35, 7, formatear_moneda(it['Subtotal']), border=1, align="R", ln=True)
+        for item in carrito:
+            pdf.cell(100, 7, f" {item['Producto']}", border=1)
+            pdf.cell(20, 7, str(item['Cant']), border=1, align="C")
+            pdf.cell(35, 7, formatear_moneda(item['Precio U.']), border=1, align="R")
+            pdf.cell(35, 7, formatear_moneda(item['Subtotal']), border=1, align="R", ln=True)
         
         pdf.set_font("Helvetica", "B", 11); pdf.ln(2)
         pdf.cell(155, 10, "TOTAL: ", align="R")
@@ -86,40 +87,51 @@ def generar_pdf_af(cliente_n, carrito, total, tipo_doc="PRESUPUESTO"):
 # --- INTERFAZ ---
 tabs = st.tabs(["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Clientes", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre"])
 
-with tabs[3]: # SOLAPA CLIENTES
+with tabs[0]: st.dataframe(df_stock, use_container_width=True, hide_index=True)
+
+with tabs[1]:
+    st.header("🚚 Carga por Lote")
+    df_l = st.data_editor(pd.DataFrame(columns=df_stock.columns), num_rows="dynamic")
+    if st.button("Integrar a Stock"):
+        pd.concat([df_stock, df_l.dropna(subset=["Accesorio"])]).to_csv(ARCHIVO_ARTICULOS, index=False); st.rerun()
+
+with tabs[2]:
+    st.header("⚙️ Editor Maestro")
+    df_m = st.data_editor(df_stock, use_container_width=True, hide_index=True)
+    if st.button("Guardar Cambios"): df_m.to_csv(ARCHIVO_ARTICULOS, index=False); st.rerun()
+
+with tabs[3]: # --- CLIENTES: EDICIÓN TOTAL Y HISTORIAL ---
     st.header("👥 Gestión de Clientes")
     if not df_clientes.empty:
         c_sel = st.selectbox("Elegir Cliente:", df_clientes["Nombre"].tolist())
         idx = df_clientes[df_clientes["Nombre"] == c_sel].index[0]
-        st.info(f"### BALANCE DE CUENTA: {formatear_moneda(df_clientes.at[idx, 'Saldo'])}")
+        st.info(f"### BALANCE: {formatear_moneda(df_clientes.at[idx, 'Saldo'])}")
         
-        with st.expander("📝 MODIFICAR DATOS DEL CLIENTE (Nombre, Tel, Saldo, etc)"):
+        with st.expander("📝 MODIFICAR DATOS Y SALDO (TODOS LOS CAMPOS)"):
             c_ed = st.columns(2)
-            en = c_ed[0].text_input("Nombre:", df_clientes.at[idx, "Nombre"])
-            et = c_ed[1].text_input("Tel:", df_clientes.at[idx, "Tel"])
-            el = c_ed[0].text_input("Localidad:", df_clientes.at[idx, "Localidad"])
-            ed = c_ed[1].text_input("Dirección:", df_clientes.at[idx, "Direccion"])
-            es = st.number_input("Saldo Manual:", value=float(df_clientes.at[idx, "Saldo"]))
-            if st.button("Guardar Cambios Totales"):
-                df_clientes.at[idx, "Nombre"], df_clientes.at[idx, "Tel"] = en, et
-                df_clientes.at[idx, "Localidad"], df_clientes.at[idx, "Direccion"], df_clientes.at[idx, "Saldo"] = el, ed, es
-                df_clientes.to_csv(ARCHIVO_CLIENTES, index=False); st.success("Guardado"); st.rerun()
+            en = c_ed[0].text_input("Nombre", df_clientes.at[idx, "Nombre"])
+            et = c_ed[1].text_input("Tel", df_clientes.at[idx, "Tel"])
+            el = c_ed[0].text_input("Localidad", df_clientes.at[idx, "Localidad"])
+            ed = c_ed[1].text_input("Dirección", df_clientes.at[idx, "Direccion"])
+            es = st.number_input("Saldo Manual", value=float(df_clientes.at[idx, "Saldo"]))
+            if st.button("Confirmar Edición Total"):
+                df_clientes.at[idx, "Nombre"], df_clientes.at[idx, "Tel"], df_clientes.at[idx, "Localidad"], df_clientes.at[idx, "Direccion"], df_clientes.at[idx, "Saldo"] = en, et, el, ed, es
+                df_clientes.to_csv(ARCHIVO_CLIENTES, index=False); st.success("Cliente actualizado"); st.rerun()
 
-        st.subheader("Historial y Re-impresiones")
+        st.subheader("Historial de Movimientos")
         h = df_movs[df_movs["Cliente"] == c_sel].sort_index(ascending=False)
         for i, r in h.iterrows():
             color = "🔴" if r["Tipo"] == "VENTA" else "🟢"
             with st.expander(f"{color} {r['Fecha']} | {r['Tipo']} | {formatear_moneda(r['Monto'])}"):
                 st.write(f"Detalle: {r['Detalle']}")
                 if r["Tipo"] == "VENTA":
-                    # Re-impresión de orden profesional
+                    # Reimpresión con diseño profesional
                     pdf_h = generar_pdf_af(c_sel, [{"Producto": r["Detalle"], "Cant": "1", "Precio U.": r["Monto"], "Subtotal": r["Monto"]}], r["Monto"], "ORDEN DE TRABAJO")
-                    if pdf_h: st.download_button("🖨️ Re-Imprimir Orden", pdf_h, f"ReOrden_{i}.pdf", key=f"re_{i}")
+                    if pdf_h: st.download_button("🖨️ Descargar Orden", pdf_h, f"Orden_{i}.pdf", key=f"re_{i}")
 
-with tabs[4]: # SOLAPA PRESUPUESTADOR
+with tabs[4]: # --- PRESUPUESTADOR: NO SE BORRA AL CONFIRMAR ---
     st.header("📄 Presupuestador")
-    cli_p = st.selectbox("Cliente:", ["Consumidor Final"] + df_clientes["Nombre"].tolist(), key="cp_p")
-    
+    cli_p = st.selectbox("Cliente:", ["Consumidor Final"] + df_clientes["Nombre"].tolist(), key="cli_pres")
     if not st.session_state.venta_confirmada:
         colp = st.columns([3,1,1])
         ps = colp[0].selectbox("Accesorio:", df_stock["Accesorio"].tolist())
@@ -159,4 +171,5 @@ with tabs[4]: # SOLAPA PRESUPUESTADOR
         if b3.button("🧹 NUEVA VENTA"):
             st.session_state.carrito = []; st.session_state.venta_confirmada = False; st.rerun()
 
-# Resto de solapas omitidas para asegurar que el código clave funcione al 100%
+with tabs[5]: st.dataframe(df_movs.sort_index(ascending=False), use_container_width=True)
+with tabs[6]: st.metric("Saldo Global", formatear_moneda(df_clientes["Saldo"].sum()))
