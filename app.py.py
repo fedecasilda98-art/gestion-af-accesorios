@@ -47,8 +47,11 @@ df_stock = cargar_datos(ARCHIVO_ARTICULOS, COLS_ARTICULOS)
 df_clientes = cargar_datos(ARCHIVO_CLIENTES, COLS_CLIENTES)
 df_movs = cargar_datos(ARCHIVO_MOVIMIENTOS, COLS_MOVS)
 
+# Inicializar estados de sesión
 if "carrito" not in st.session_state: st.session_state.carrito = []
 if "orden_lista" not in st.session_state: st.session_state.orden_lista = None
+if "confirmar_orden" not in st.session_state: st.session_state.confirmar_orden = False
+if "confirmar_nc" not in st.session_state: st.session_state.confirmar_nc = False
 
 # --- UTILIDADES DE FORMATO ---
 def formatear_moneda(valor):
@@ -112,7 +115,7 @@ def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRE
         
         return pdf.output(dest='S').encode('latin-1', 'replace')
     except:
-        return None
+        return b"" # Retorna binario vacío en lugar de None para evitar crash
 
 # --- INTERFAZ ---
 if es_cliente:
@@ -157,7 +160,7 @@ else:
         if st.button("Guardar Cambios Maestro"):
             df_ed.to_csv(ARCHIVO_ARTICULOS, index=False); st.success("¡Base de datos actualizada!"); st.rerun()
 
-    with tabs[3]: # CTA CTE (RESTAURADO COMPLETAMENTE)
+    with tabs[3]: # CTA CTE
         st.header("👥 Gestión de Cuentas Corrientes")
         if not df_clientes.empty:
             cli_sel = st.selectbox("🔍 Seleccionar Cliente:", df_clientes["Nombre"].tolist(), key="busqueda_global_cli")
@@ -201,18 +204,17 @@ else:
                         st.success("Pago registrado."); st.rerun()
 
         st.divider()
-        # --- SECCIÓN RESTAURADA: ALTA, MODIFICACIÓN Y BAJA ---
         st.subheader("⚙️ Configuración de Clientes")
         c_alta, c_mod, c_del = st.columns(3)
         with c_alta:
-            with st.expander("➕ Nuevo Cliente"):
+            with st.expander("➕ Nuevo"):
                 n_n = st.text_input("Nombre"); n_t = st.text_input("Tel"); n_l = st.text_input("Loc"); n_d = st.text_input("Dir")
                 if st.button("Guardar"):
                     nuevo_cli = pd.DataFrame([[n_n, n_t, n_l, n_d, 0.0]], columns=COLS_CLIENTES)
                     pd.concat([df_clientes, nuevo_cli], ignore_index=True).to_csv(ARCHIVO_CLIENTES, index=False)
                     st.success("Cliente creado"); st.rerun()
         with c_mod:
-            with st.expander("✏️ Editar Datos"):
+            with st.expander("✏️ Editar"):
                 if not df_clientes.empty:
                     cli_e = st.selectbox("Elegir:", df_clientes["Nombre"].tolist(), key="e_cli_tab")
                     idx_e = df_clientes[df_clientes["Nombre"] == cli_e].index[0]
@@ -248,7 +250,7 @@ else:
             st.rerun()
 
         if st.session_state.carrito:
-            st.subheader("Detalle del Presupuesto")
+            st.subheader("Detalle")
             for index, item in enumerate(st.session_state.carrito):
                 col_item, col_btn = st.columns([4, 1])
                 with col_item:
@@ -265,24 +267,21 @@ else:
             with b1:
                 pdf_p = generar_pdf_binario(cli_p, st.session_state.carrito, t_f, df_clientes, "PRESUPUESTO")
                 if pdf_p: st.download_button("📥 BAJAR PRE.", pdf_p, f"Pre_{cli_p}.pdf", "application/pdf")
-            
             with b2:
                 if st.button("✅ ORDEN", use_container_width=True):
                     st.session_state.confirmar_orden = True
-            
             with b3:
                 if st.button("🔵 N. CRÉDITO", use_container_width=True):
                     st.session_state.confirmar_nc = True
-            
             with b4:
-                if st.button("🗑️ LIMPIAR TODO", use_container_width=True):
+                if st.button("🗑️ LIMPIAR", use_container_width=True):
                     st.session_state.carrito = []; st.session_state.orden_lista = None; st.rerun()
 
             # --- CARTELES DE CONFIRMACIÓN ---
-            if st.session_state.get("confirmar_orden"):
-                st.warning(f"¿Confirmar ORDEN de trabajo para {cli_p}?")
+            if st.session_state.confirmar_orden:
+                st.warning(f"¿Generar ORDEN para {cli_p}?")
                 c_si, c_no = st.columns(2)
-                if c_si.button("SÍ, GENERAR", type="primary"):
+                if c_si.button("SÍ, GENERAR"):
                     det_prod = ", ".join([f"{item['Cant']}x {item['Producto']} (á {formatear_moneda(item['Precio U.'])})" for item in st.session_state.carrito])
                     for item in st.session_state.carrito:
                         df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] -= item["Cant"]
@@ -294,16 +293,14 @@ else:
                         n_mov = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_p, "Tipo": "VENTA", "Monto": t_f, "Metodo": "-", "Detalle": det_prod}])
                         pd.concat([df_movs, n_mov]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
                     st.session_state.orden_lista = generar_pdf_binario(cli_p, st.session_state.carrito, t_f, df_clientes, "ORDEN DE TRABAJO")
-                    st.session_state.confirmar_orden = False
-                    st.rerun()
+                    st.session_state.confirmar_orden = False; st.rerun()
                 if c_no.button("CANCELAR"):
-                    st.session_state.confirmar_orden = False
-                    st.rerun()
+                    st.session_state.confirmar_orden = False; st.rerun()
 
-            if st.session_state.get("confirmar_nc"):
-                st.info(f"¿Confirmar NOTA DE CRÉDITO para {cli_p}?")
+            if st.session_state.confirmar_nc:
+                st.info(f"¿Generar NOTA DE CRÉDITO para {cli_p}?")
                 cn_si, cn_no = st.columns(2)
-                if cn_si.button("SÍ, GENERAR N.C.", type="primary"):
+                if cn_si.button("SÍ, GENERAR N.C."):
                     det_prod = ", ".join([f"{item['Cant']}x {item['Producto']} (á {formatear_moneda(item['Precio U.'])})" for item in st.session_state.carrito])
                     for item in st.session_state.carrito:
                         df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] += item["Cant"]
@@ -315,15 +312,12 @@ else:
                         n_mov = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_p, "Tipo": "N. CRÉDITO", "Monto": t_f, "Metodo": "-", "Detalle": det_prod}])
                         pd.concat([df_movs, n_mov]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
                     st.session_state.orden_lista = generar_pdf_binario(cli_p, st.session_state.carrito, t_f, df_clientes, "NOTA DE CRÉDITO")
-                    st.session_state.confirmar_nc = False
-                    st.rerun()
+                    st.session_state.confirmar_nc = False; st.rerun()
                 if cn_no.button("CANCELAR "):
-                    st.session_state.confirmar_nc = False
-                    st.rerun()
+                    st.session_state.confirmar_nc = False; st.rerun()
 
             if st.session_state.orden_lista:
-                st.success("¡Documento generado con éxito!")
-                st.download_button("⬇️ DESCARGAR COMPROBANTE", data=st.session_state.orden_lista, file_name=f"Final_{cli_p}.pdf", type="primary")
+                st.download_button("⬇️ BAJAR COMPROBANTE", data=st.session_state.orden_lista, file_name=f"Final_{cli_p}.pdf", type="primary")
 
     with tabs[5]: # ÓRDENES
         st.header("📋 Historial Global")
