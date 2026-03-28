@@ -236,6 +236,7 @@ else:
     with tabs[4]: # PRESUPUESTADOR
         st.header("📄 Generador de Presupuestos")
         cli_p = st.selectbox("Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cp_p")
+        
         p1, p2, p3 = st.columns([2, 1, 1])
         with p1: i_p = st.selectbox("Artículo:", df_stock["Accesorio"].tolist(), key="ip_p")
         with p2: q_p = st.number_input("Cant:", min_value=1, value=1)
@@ -264,8 +265,24 @@ else:
             with b1:
                 pdf_p = generar_pdf_binario(cli_p, st.session_state.carrito, t_f, df_clientes, "PRESUPUESTO")
                 if pdf_p: st.download_button("📥 BAJAR PRE.", pdf_p, f"Pre_{cli_p}.pdf", "application/pdf")
+            
             with b2:
                 if st.button("✅ ORDEN", use_container_width=True):
+                    st.session_state.confirmar_orden = True
+            
+            with b3:
+                if st.button("🔵 N. CRÉDITO", use_container_width=True):
+                    st.session_state.confirmar_nc = True
+            
+            with b4:
+                if st.button("🗑️ LIMPIAR TODO", use_container_width=True):
+                    st.session_state.carrito = []; st.session_state.orden_lista = None; st.rerun()
+
+            # --- CARTELES DE CONFIRMACIÓN ---
+            if st.session_state.get("confirmar_orden"):
+                st.warning(f"¿Confirmar ORDEN de trabajo para {cli_p}?")
+                c_si, c_no = st.columns(2)
+                if c_si.button("SÍ, GENERAR", type="primary"):
                     det_prod = ", ".join([f"{item['Cant']}x {item['Producto']} (á {formatear_moneda(item['Precio U.'])})" for item in st.session_state.carrito])
                     for item in st.session_state.carrito:
                         df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] -= item["Cant"]
@@ -277,9 +294,16 @@ else:
                         n_mov = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_p, "Tipo": "VENTA", "Monto": t_f, "Metodo": "-", "Detalle": det_prod}])
                         pd.concat([df_movs, n_mov]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
                     st.session_state.orden_lista = generar_pdf_binario(cli_p, st.session_state.carrito, t_f, df_clientes, "ORDEN DE TRABAJO")
+                    st.session_state.confirmar_orden = False
                     st.rerun()
-            with b3:
-                if st.button("🔵 N. CRÉDITO", use_container_width=True):
+                if c_no.button("CANCELAR"):
+                    st.session_state.confirmar_orden = False
+                    st.rerun()
+
+            if st.session_state.get("confirmar_nc"):
+                st.info(f"¿Confirmar NOTA DE CRÉDITO para {cli_p}?")
+                cn_si, cn_no = st.columns(2)
+                if cn_si.button("SÍ, GENERAR N.C.", type="primary"):
                     det_prod = ", ".join([f"{item['Cant']}x {item['Producto']} (á {formatear_moneda(item['Precio U.'])})" for item in st.session_state.carrito])
                     for item in st.session_state.carrito:
                         df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] += item["Cant"]
@@ -291,13 +315,15 @@ else:
                         n_mov = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_p, "Tipo": "N. CRÉDITO", "Monto": t_f, "Metodo": "-", "Detalle": det_prod}])
                         pd.concat([df_movs, n_mov]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
                     st.session_state.orden_lista = generar_pdf_binario(cli_p, st.session_state.carrito, t_f, df_clientes, "NOTA DE CRÉDITO")
+                    st.session_state.confirmar_nc = False
                     st.rerun()
-            with b4:
-                if st.button("🗑️ LIMPIAR TODO", use_container_width=True):
-                    st.session_state.carrito = []; st.session_state.orden_lista = None; st.rerun()
+                if cn_no.button("CANCELAR "):
+                    st.session_state.confirmar_nc = False
+                    st.rerun()
 
             if st.session_state.orden_lista:
-                st.download_button("⬇️ BAJAR COMPROBANTE", data=st.session_state.orden_lista, file_name=f"Final_{cli_p}.pdf", type="primary")
+                st.success("¡Documento generado con éxito!")
+                st.download_button("⬇️ DESCARGAR COMPROBANTE", data=st.session_state.orden_lista, file_name=f"Final_{cli_p}.pdf", type="primary")
 
     with tabs[5]: # ÓRDENES
         st.header("📋 Historial Global")
