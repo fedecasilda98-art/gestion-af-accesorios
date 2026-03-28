@@ -113,7 +113,6 @@ def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRE
         pdf.cell(155, 10, "TOTAL:", border=0, align="R")
         pdf.cell(35, 10, f"{formatear_moneda(total)}", border=1, align="R")
         
-        # FIX: Eliminado .encode('latin-1') porque output('S') ya devuelve bytes o bytearray
         res = pdf.output(dest='S')
         return bytes(res) if isinstance(res, (bytearray, bytes)) else res.encode('latin-1', 'replace')
     except Exception as e:
@@ -206,9 +205,39 @@ else:
                         pd.concat([df_movs, n_mov]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
                         st.success("Pago registrado"); st.rerun()
 
+        st.divider()
+        st.subheader("⚙️ Configuración de Clientes")
+        c_alta, c_mod, c_del = st.columns(3)
+        with c_alta:
+            with st.expander("➕ Nuevo"):
+                n_n = st.text_input("Nombre"); n_t = st.text_input("Tel"); n_l = st.text_input("Loc"); n_d = st.text_input("Dir")
+                if st.button("Guardar"):
+                    nuevo_cli = pd.DataFrame([[n_n, n_t, n_l, n_d, 0.0]], columns=COLS_CLIENTES)
+                    pd.concat([df_clientes, nuevo_cli], ignore_index=True).to_csv(ARCHIVO_CLIENTES, index=False); st.rerun()
+        with c_mod:
+            with st.expander("✏️ Editar"):
+                if not df_clientes.empty:
+                    cli_e = st.selectbox("Elegir:", df_clientes["Nombre"].tolist(), key="e_cli_tab")
+                    idx_e = df_clientes[df_clientes["Nombre"] == cli_e].index[0]
+                    e_n = st.text_input("Nombre", value=df_clientes.at[idx_e, "Nombre"], key="edit_n")
+                    e_t = st.text_input("Tel", value=df_clientes.at[idx_e, "Tel"], key="edit_t")
+                    e_l = st.text_input("Loc", value=df_clientes.at[idx_e, "Localidad"], key="edit_l")
+                    e_d = st.text_input("Dir", value=df_clientes.at[idx_e, "Direccion"], key="edit_d")
+                    e_s = st.number_input("Saldo", value=float(df_clientes.at[idx_e, "Saldo"]), key="edit_s")
+                    if st.button("Actualizar"):
+                        df_clientes.at[idx_e, "Nombre"], df_clientes.at[idx_e, "Tel"], df_clientes.at[idx_e, "Localidad"], df_clientes.at[idx_e, "Direccion"], df_clientes.at[idx_e, "Saldo"] = e_n, e_t, e_l, e_d, round(e_s, 2)
+                        df_clientes.to_csv(ARCHIVO_CLIENTES, index=False); st.rerun()
+        with c_del:
+            with st.expander("🗑️ Borrar"):
+                if not df_clientes.empty:
+                    cli_d = st.selectbox("Borrar:", df_clientes["Nombre"].tolist(), key="d_cli_tab")
+                    if st.checkbox("Confirmar eliminación permanente"):
+                        if st.button("Eliminar", type="primary"):
+                            df_clientes = df_clientes[df_clientes["Nombre"] != cli_d]
+                            df_clientes.to_csv(ARCHIVO_CLIENTES, index=False); st.rerun()
+
     with tabs[4]: # PRESUPUESTADOR
         st.header("📄 Generador de Presupuestos")
-        # FIX: Se eliminó el ID duplicado "cp_p" si existiera en otro lado y se asegura unicidad
         cli_p = st.selectbox("Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cliente_presupuesto_unico")
         
         p1, p2, p3 = st.columns([2, 1, 1])
