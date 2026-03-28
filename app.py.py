@@ -93,11 +93,11 @@ def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRE
         pdf.set_font("Helvetica", "", 10)
         pdf.cell(95, 7, f" TEL: {tel}", border="L")
         pdf.cell(95, 7, f" LOCALIDAD: {loc}", border="R", ln=True)
-        pdf.cell(190, 7, f" DIRECCION: {dir}", border="LRB", ln=True)
+        pdf.cell(190, 7, f" DIRECCIÓN: {dir}", border="LRB", ln=True)
         pdf.ln(5)
         
         pdf.set_font("Helvetica", "B", 10); pdf.set_fill_color(200, 200, 200)
-        pdf.cell(100, 10, " Articulo / Accesorio", border=1, fill=True)
+        pdf.cell(100, 10, " Artículo / Accesorio", border=1, fill=True)
         pdf.cell(20, 10, "Cant.", border=1, fill=True, align="C")
         pdf.cell(35, 10, "P. Unit", border=1, fill=True, align="R")
         pdf.cell(35, 10, "Subtotal", border=1, fill=True, align="R", ln=True)
@@ -113,9 +113,10 @@ def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRE
         pdf.cell(155, 10, "TOTAL:", border=0, align="R")
         pdf.cell(35, 10, f"{formatear_moneda(total)}", border=1, align="R")
         
-        # Usamos 'S' para devolver el string y luego codificarlo para evitar errores en móviles
+        # Generar salida binaria segura para HTTP
         return pdf.output(dest='S').encode('latin-1', 'replace')
     except Exception as e:
+        st.error(f"Error PDF: {e}")
         return b""
 
 # --- INTERFAZ ---
@@ -181,14 +182,21 @@ else:
                     color = "🔴" if row["Tipo"] == "VENTA" else "🟢" if row["Tipo"] == "PAGO" else "🔵"
                     with st.expander(f"{color} {row['Fecha']} | {row['Tipo']} | {formatear_moneda(row['Monto'])}"):
                         st.write(f"**Detalle:** {row['Detalle']}")
-                        if row["Tipo"] in ["VENTA", "N. CRÉDITO", "ORDEN DE TRABAJO", "NOTA DE CRÉDITO"]:
-                            # Lógica para intentar reconstruir items y permitir reimpresión
-                            pdf_re = generar_pdf_binario(cli_sel, [{"Producto": "Reimpresión de Movimiento", "Cant": 1, "Precio U.": row["Monto"], "Subtotal": row["Monto"]}], row["Monto"], df_clientes, row["Tipo"])
-                            if pdf_re: st.download_button(f"🖨️ DESCARGAR PDF", pdf_re, f"Mov_{i}.pdf", "application/pdf", key=f"re_{i}")
+                        if row["Tipo"] in ["VENTA", "N. CRÉDITO", "PRESUPUESTO", "ORDEN DE TRABAJO"]:
+                            items_raw = str(row["Detalle"]).split(", ")
+                            temp_carrito = []
+                            for it in items_raw:
+                                match = re.search(r"(\d+)x (.*) \(á \$ (.*)\)", it.replace(".", "").replace(",", "."))
+                                if match:
+                                    cant, prod, pu = match.groups()
+                                    temp_carrito.append({"Producto": prod, "Cant": int(cant), "Precio U.": float(pu), "Subtotal": int(cant)*float(pu)})
+                            if temp_carrito:
+                                pdf_re = generar_pdf_binario(cli_sel, temp_carrito, row["Monto"], df_clientes, row["Tipo"])
+                                if pdf_re: st.download_button(f"🖨️ BAJAR PDF", pdf_re, f"{row['Tipo']}_{i}.pdf", "application/pdf", key=f"re_{i}")
 
             with col_ops:
                 st.subheader("Registrar Pago")
-                monto_p = st.number_input("Monto $:", min_value=0.0, step=0.01, key="pago_monto")
+                monto_p = st.number_input("Monto $:", min_value=0.0, step=0.01)
                 if st.button("Confirmar Pago"):
                     if monto_p > 0:
                         df_clientes.at[idx_c, "Saldo"] = round(df_clientes.at[idx_c, "Saldo"] - monto_p, 2)
@@ -256,15 +264,13 @@ else:
             st.markdown(f"### TOTAL: {formatear_moneda(t_f)}")
             
             st.divider()
-            
-            # --- MEJORA CRÍTICA CELULARES: Generación previa del PDF ---
-            pdf_pre_data = generar_pdf_binario(cli_p, st.session_state.carrito, t_f, df_clientes, "PRESUPUESTO")
-            
+            # SECCIÓN DE BOTONES MEJORADA PARA MÓVIL
             b1, b2, b3, b4 = st.columns(4)
             
-            with b1: # Descarga de Presupuesto
-                if pdf_pre_data:
-                    st.download_button("📥 BAJAR PRE.", data=pdf_pre_data, file_name=f"Presupuesto_{cli_p}.pdf", mime="application/pdf", key="btn_descarga_pre")
+            with b1:
+                pdf_bytes = generar_pdf_binario(cli_p, st.session_state.carrito, t_f, df_clientes, "PRESUPUESTO")
+                if pdf_bytes:
+                    st.download_button("📥 BAJAR PDF", data=pdf_bytes, file_name=f"Presupuesto_{cli_p}.pdf", mime="application/pdf", use_container_width=True)
             
             with b2:
                 if st.button("✅ ORDEN", use_container_width=True): st.session_state.confirmar_orden = True
@@ -288,11 +294,8 @@ else:
                         df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
                         n_mov = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_p, "Tipo": "VENTA", "Monto": t_f, "Metodo": "-", "Detalle": det_prod}])
                         pd.concat([df_movs, n_mov]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
-                    
-                    # Generamos el PDF final antes del rerun para que esté listo para el download_button
                     st.session_state.orden_lista = generar_pdf_binario(cli_p, st.session_state.carrito, t_f, df_clientes, "ORDEN DE TRABAJO")
-                    st.session_state.confirmar_orden = False
-                    st.rerun()
+                    st.session_state.confirmar_orden = False; st.rerun()
                 if c_no.button("CANCELAR"): st.session_state.confirmar_orden = False; st.rerun()
 
             if st.session_state.confirmar_nc:
@@ -310,13 +313,11 @@ else:
                         n_mov = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_p, "Tipo": "N. CRÉDITO", "Monto": t_f, "Metodo": "-", "Detalle": det_prod}])
                         pd.concat([df_movs, n_mov]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
                     st.session_state.orden_lista = generar_pdf_binario(cli_p, st.session_state.carrito, t_f, df_clientes, "NOTA DE CRÉDITO")
-                    st.session_state.confirmar_nc = False
-                    st.rerun()
+                    st.session_state.confirmar_nc = False; st.rerun()
                 if cn_no.button("CANCELAR "): st.session_state.confirmar_nc = False; st.rerun()
 
-            # Botón de descarga de comprobante final (Orden o NC)
             if st.session_state.orden_lista:
-                st.download_button("⬇️ DESCARGAR DOCUMENTO FINAL", data=st.session_state.orden_lista, file_name=f"Comprobante_{cli_p}.pdf", mime="application/pdf", type="primary")
+                st.download_button("⬇️ DESCARGAR DOCUMENTO FINAL", data=st.session_state.orden_lista, file_name=f"Documento_{cli_p}.pdf", mime="application/pdf", type="primary", use_container_width=True)
 
     with tabs[5]: # ÓRDENES
         st.header("📋 Historial Global")
