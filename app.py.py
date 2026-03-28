@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 import re
 from fpdf import FPDF
-from io import BytesIO
+from io import BytesIO  # Importante para descargas en móvil
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Gestión AF Accesorios", layout="wide", initial_sidebar_state="collapsed")
@@ -110,11 +110,8 @@ def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRE
         pdf.cell(155, 10, "TOTAL:", border=0, align="R")
         pdf.cell(35, 10, f"{formatear_moneda(total)}", border=1, align="R")
         
-        # Uso de Buffer para evitar errores en móviles/Streamlit Cloud
-        buffer = BytesIO()
-        pdf_out = pdf.output(dest='S').encode('latin-1', 'replace')
-        buffer.write(pdf_out)
-        return buffer.getvalue()
+        # Salida a bytes compatible con navegadores móviles
+        return pdf.output(dest='S').encode('latin-1', 'replace')
     except:
         return None
 
@@ -145,7 +142,7 @@ else:
         st.header("Inventario Actual")
         if not df_stock.empty:
             c1, c2, c3 = st.columns(3)
-            c1.metric("Valor Stock (Costo)", formatear_moneda((df_stock['Costo Base'] * df_stock['Stock']).sum()))
+            c1.metric("Costo Stock", formatear_moneda((df_stock['Costo Base'] * df_stock['Stock']).sum()))
             c2.metric("Total Lista 1", formatear_moneda((df_stock['Lista 1 (Cheques)'] * df_stock['Stock']).sum()))
             c3.metric("Total Lista 2", formatear_moneda((df_stock['Lista 2 (Efectivo)'] * df_stock['Stock']).sum()))
         st.dataframe(df_stock, use_container_width=True, hide_index=True)
@@ -159,9 +156,7 @@ else:
         st.header("⚙️ Maestro de Artículos")
         df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True, key="ed_maestro_full")
         if st.button("Guardar Cambios Maestro"):
-            if df_ed is not None:
-                df_ed.to_csv(ARCHIVO_ARTICULOS, index=False)
-                st.success("¡Base de datos actualizada!"); st.rerun()
+            df_ed.to_csv(ARCHIVO_ARTICULOS, index=False); st.success("¡Base de datos actualizada!"); st.rerun()
 
     with tabs[3]: # CTA CTE
         st.header("👥 Gestión de Cuentas Corrientes")
@@ -193,7 +188,7 @@ else:
                                     temp_carrito.append({"Producto": prod, "Cant": int(cant), "Precio U.": float(pu), "Subtotal": int(cant)*float(pu)})
                             if temp_carrito:
                                 pdf_re = generar_pdf_binario(cli_sel, temp_carrito, row["Monto"], df_clientes, row["Tipo"])
-                                if pdf_re: st.download_button(f"🖨️ REIMPRIMIR", pdf_re, f"Rei_{i}.pdf", "application/pdf", key=f"re_{i}")
+                                if pdf_re: st.download_button(f"🖨️ BAJAR {row['Tipo']}", pdf_re, f"Rei_{i}.pdf", "application/pdf", key=f"re_{i}")
 
             with col_ops:
                 st.subheader("Registrar Pago")
@@ -206,36 +201,6 @@ else:
                         pd.concat([df_movs, n_mov]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
                         st.success("Pago registrado."); st.rerun()
 
-        st.divider()
-        c_alta, c_mod, c_del = st.columns(3)
-        with c_alta:
-            with st.expander("➕ Nuevo Cliente"):
-                n_n = st.text_input("Nombre"); n_t = st.text_input("Tel"); n_l = st.text_input("Loc"); n_d = st.text_input("Dir")
-                if st.button("Guardar"):
-                    pd.concat([df_clientes, pd.DataFrame([[n_n, n_t, n_l, n_d, 0.0]], columns=COLS_CLIENTES)], ignore_index=True).to_csv(ARCHIVO_CLIENTES, index=False)
-                    st.rerun()
-        with c_mod:
-            with st.expander("✏️ Editar Datos"):
-                if not df_clientes.empty:
-                    cli_e = st.selectbox("Elegir:", df_clientes["Nombre"].tolist(), key="e_cli_tab")
-                    idx_e = df_clientes[df_clientes["Nombre"] == cli_e].index[0]
-                    e_n = st.text_input("Nombre", value=df_clientes.at[idx_e, "Nombre"])
-                    e_t = st.text_input("Tel", value=df_clientes.at[idx_e, "Tel"])
-                    e_l = st.text_input("Loc", value=df_clientes.at[idx_e, "Localidad"])
-                    e_d = st.text_input("Dir", value=df_clientes.at[idx_e, "Direccion"])
-                    e_s = st.number_input("Saldo", value=float(df_clientes.at[idx_e, "Saldo"]))
-                    if st.button("Actualizar"):
-                        df_clientes.at[idx_e, "Nombre"], df_clientes.at[idx_e, "Tel"], df_clientes.at[idx_e, "Localidad"], df_clientes.at[idx_e, "Direccion"], df_clientes.at[idx_e, "Saldo"] = e_n, e_t, e_l, e_d, round(e_s, 2)
-                        df_clientes.to_csv(ARCHIVO_CLIENTES, index=False); st.rerun()
-        with c_del:
-            with st.expander("🗑️ Borrar"):
-                if not df_clientes.empty:
-                    cli_d = st.selectbox("Borrar:", df_clientes["Nombre"].tolist(), key="d_cli_tab")
-                    if st.checkbox("Confirmar"):
-                        if st.button("Eliminar", type="primary"):
-                            df_clientes = df_clientes[df_clientes["Nombre"] != cli_d]
-                            df_clientes.to_csv(ARCHIVO_CLIENTES, index=False); st.rerun()
-
     with tabs[4]: # PRESUPUESTADOR
         st.header("📄 Generador de Presupuestos")
         cli_p = st.selectbox("Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cp_p")
@@ -244,7 +209,7 @@ else:
         with p2: q_p = st.number_input("Cant:", min_value=1, value=1)
         with p3: l_p = st.selectbox("Lista:", ["Lista 1 (Cheques)", "Lista 2 (Efectivo)"])
 
-        if st.button("Agregar al Carrito"):
+        if st.button("➕ AGREGAR"):
             p_u = round(df_stock[df_stock["Accesorio"] == i_p][l_p].values[0], 2)
             st.session_state.carrito.append({"Producto": i_p, "Cant": q_p, "Precio U.": p_u, "Subtotal": round(p_u * q_p, 2)})
             st.rerun()
@@ -291,7 +256,7 @@ else:
                     st.session_state.carrito = []; st.session_state.orden_lista = None; st.rerun()
 
             if st.session_state.orden_lista:
-                st.download_button("⬇️ DESCARGAR", data=st.session_state.orden_lista, file_name=f"Final_{cli_p}.pdf", type="primary")
+                st.download_button("⬇️ BAJAR COMPROBANTE", data=st.session_state.orden_lista, file_name=f"Final_{cli_p}.pdf", type="primary")
 
     with tabs[5]: # ÓRDENES
         st.header("📋 Historial Global")
