@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 import re
 from fpdf import FPDF
-from io import BytesIO  # Importante para descargas en móvil
+from io import BytesIO
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Gestión AF Accesorios", layout="wide", initial_sidebar_state="collapsed")
@@ -110,7 +110,6 @@ def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRE
         pdf.cell(155, 10, "TOTAL:", border=0, align="R")
         pdf.cell(35, 10, f"{formatear_moneda(total)}", border=1, align="R")
         
-        # Salida a bytes compatible con navegadores móviles
         return pdf.output(dest='S').encode('latin-1', 'replace')
     except:
         return None
@@ -201,24 +200,43 @@ else:
                         pd.concat([df_movs, n_mov]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
                         st.success("Pago registrado."); st.rerun()
 
-    with tabs[4]: # PRESUPUESTADOR
+    with tabs[4]: # PRESUPUESTADOR (MODIFICADO PARA ELIMINACIÓN INDIVIDUAL)
         st.header("📄 Generador de Presupuestos")
         cli_p = st.selectbox("Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cp_p")
+        
+        # Selección de Artículos
         p1, p2, p3 = st.columns([2, 1, 1])
         with p1: i_p = st.selectbox("Artículo:", df_stock["Accesorio"].tolist(), key="ip_p")
         with p2: q_p = st.number_input("Cant:", min_value=1, value=1)
         with p3: l_p = st.selectbox("Lista:", ["Lista 1 (Cheques)", "Lista 2 (Efectivo)"])
 
-        if st.button("➕ AGREGAR"):
+        if st.button("➕ AGREGAR AL CARRITO"):
             p_u = round(df_stock[df_stock["Accesorio"] == i_p][l_p].values[0], 2)
-            st.session_state.carrito.append({"Producto": i_p, "Cant": q_p, "Precio U.": p_u, "Subtotal": round(p_u * q_p, 2)})
+            st.session_state.carrito.append({
+                "Producto": i_p, 
+                "Cant": q_p, 
+                "Precio U.": p_u, 
+                "Subtotal": round(p_u * q_p, 2)
+            })
             st.rerun()
 
         if st.session_state.carrito:
-            df_car = pd.DataFrame(st.session_state.carrito)
-            st.table(df_car.assign(Subtotal=df_car['Subtotal'].map(formatear_moneda)))
-            t_f = round(df_car["Subtotal"].sum(), 2)
+            st.subheader("Detalle del Presupuesto")
             
+            # --- ELIMINACIÓN INDIVIDUAL ---
+            for index, item in enumerate(st.session_state.carrito):
+                col_item, col_btn = st.columns([4, 1])
+                with col_item:
+                    st.write(f"**{item['Cant']}x** {item['Producto']} — {formatear_moneda(item['Subtotal'])}")
+                with col_btn:
+                    if st.button("❌", key=f"del_{index}"):
+                        st.session_state.carrito.pop(index)
+                        st.rerun()
+            
+            t_f = round(sum(item["Subtotal"] for item in st.session_state.carrito), 2)
+            st.markdown(f"### TOTAL: {formatear_moneda(t_f)}")
+            
+            st.divider()
             b1, b2, b3, b4 = st.columns(4)
             with b1:
                 pdf_p = generar_pdf_binario(cli_p, st.session_state.carrito, t_f, df_clientes, "PRESUPUESTO")
@@ -252,7 +270,7 @@ else:
                     st.session_state.orden_lista = generar_pdf_binario(cli_p, st.session_state.carrito, t_f, df_clientes, "NOTA DE CRÉDITO")
                     st.rerun()
             with b4:
-                if st.button("🗑️ LIMPIAR", use_container_width=True):
+                if st.button("🗑️ LIMPIAR TODO", use_container_width=True):
                     st.session_state.carrito = []; st.session_state.orden_lista = None; st.rerun()
 
             if st.session_state.orden_lista:
