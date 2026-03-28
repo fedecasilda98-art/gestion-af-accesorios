@@ -157,7 +157,7 @@ else:
         if st.button("Guardar Cambios Maestro"):
             df_ed.to_csv(ARCHIVO_ARTICULOS, index=False); st.success("¡Base de datos actualizada!"); st.rerun()
 
-    with tabs[3]: # CTA CTE
+    with tabs[3]: # CTA CTE (RESTAURADO COMPLETAMENTE)
         st.header("👥 Gestión de Cuentas Corrientes")
         if not df_clientes.empty:
             cli_sel = st.selectbox("🔍 Seleccionar Cliente:", df_clientes["Nombre"].tolist(), key="busqueda_global_cli")
@@ -200,11 +200,42 @@ else:
                         pd.concat([df_movs, n_mov]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
                         st.success("Pago registrado."); st.rerun()
 
-    with tabs[4]: # PRESUPUESTADOR (MODIFICADO PARA ELIMINACIÓN INDIVIDUAL)
+        st.divider()
+        # --- SECCIÓN RESTAURADA: ALTA, MODIFICACIÓN Y BAJA ---
+        st.subheader("⚙️ Configuración de Clientes")
+        c_alta, c_mod, c_del = st.columns(3)
+        with c_alta:
+            with st.expander("➕ Nuevo Cliente"):
+                n_n = st.text_input("Nombre"); n_t = st.text_input("Tel"); n_l = st.text_input("Loc"); n_d = st.text_input("Dir")
+                if st.button("Guardar"):
+                    nuevo_cli = pd.DataFrame([[n_n, n_t, n_l, n_d, 0.0]], columns=COLS_CLIENTES)
+                    pd.concat([df_clientes, nuevo_cli], ignore_index=True).to_csv(ARCHIVO_CLIENTES, index=False)
+                    st.success("Cliente creado"); st.rerun()
+        with c_mod:
+            with st.expander("✏️ Editar Datos"):
+                if not df_clientes.empty:
+                    cli_e = st.selectbox("Elegir:", df_clientes["Nombre"].tolist(), key="e_cli_tab")
+                    idx_e = df_clientes[df_clientes["Nombre"] == cli_e].index[0]
+                    e_n = st.text_input("Nombre", value=df_clientes.at[idx_e, "Nombre"])
+                    e_t = st.text_input("Tel", value=df_clientes.at[idx_e, "Tel"])
+                    e_l = st.text_input("Loc", value=df_clientes.at[idx_e, "Localidad"])
+                    e_d = st.text_input("Dir", value=df_clientes.at[idx_e, "Direccion"])
+                    e_s = st.number_input("Saldo", value=float(df_clientes.at[idx_e, "Saldo"]))
+                    if st.button("Actualizar"):
+                        df_clientes.at[idx_e, "Nombre"], df_clientes.at[idx_e, "Tel"], df_clientes.at[idx_e, "Localidad"], df_clientes.at[idx_e, "Direccion"], df_clientes.at[idx_e, "Saldo"] = e_n, e_t, e_l, e_d, round(e_s, 2)
+                        df_clientes.to_csv(ARCHIVO_CLIENTES, index=False); st.success("Datos actualizados"); st.rerun()
+        with c_del:
+            with st.expander("🗑️ Borrar"):
+                if not df_clientes.empty:
+                    cli_d = st.selectbox("Borrar:", df_clientes["Nombre"].tolist(), key="d_cli_tab")
+                    if st.checkbox("Confirmar eliminación permanente"):
+                        if st.button("Eliminar Cliente", type="primary"):
+                            df_clientes = df_clientes[df_clientes["Nombre"] != cli_d]
+                            df_clientes.to_csv(ARCHIVO_CLIENTES, index=False); st.rerun()
+
+    with tabs[4]: # PRESUPUESTADOR
         st.header("📄 Generador de Presupuestos")
         cli_p = st.selectbox("Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cp_p")
-        
-        # Selección de Artículos
         p1, p2, p3 = st.columns([2, 1, 1])
         with p1: i_p = st.selectbox("Artículo:", df_stock["Accesorio"].tolist(), key="ip_p")
         with p2: q_p = st.number_input("Cant:", min_value=1, value=1)
@@ -212,26 +243,18 @@ else:
 
         if st.button("➕ AGREGAR AL CARRITO"):
             p_u = round(df_stock[df_stock["Accesorio"] == i_p][l_p].values[0], 2)
-            st.session_state.carrito.append({
-                "Producto": i_p, 
-                "Cant": q_p, 
-                "Precio U.": p_u, 
-                "Subtotal": round(p_u * q_p, 2)
-            })
+            st.session_state.carrito.append({"Producto": i_p, "Cant": q_p, "Precio U.": p_u, "Subtotal": round(p_u * q_p, 2)})
             st.rerun()
 
         if st.session_state.carrito:
             st.subheader("Detalle del Presupuesto")
-            
-            # --- ELIMINACIÓN INDIVIDUAL ---
             for index, item in enumerate(st.session_state.carrito):
                 col_item, col_btn = st.columns([4, 1])
                 with col_item:
                     st.write(f"**{item['Cant']}x** {item['Producto']} — {formatear_moneda(item['Subtotal'])}")
                 with col_btn:
                     if st.button("❌", key=f"del_{index}"):
-                        st.session_state.carrito.pop(index)
-                        st.rerun()
+                        st.session_state.carrito.pop(index); st.rerun()
             
             t_f = round(sum(item["Subtotal"] for item in st.session_state.carrito), 2)
             st.markdown(f"### TOTAL: {formatear_moneda(t_f)}")
