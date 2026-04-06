@@ -23,21 +23,21 @@ if not os.path.exists(CARPETA_FOTOS):
     os.makedirs(CARPETA_FOTOS)
 
 # --- CARGA DE DATOS ---
-def cargar_datos(archivo, columnas):
+def cargar_datos(archivo, columns):
     if os.path.exists(archivo):
         try:
             df = pd.read_csv(archivo)
             df.columns = df.columns.str.strip()
-            for col in columnas:
+            for col in columns:
                 if col not in df.columns: 
                     df[col] = 0.0 if any(x in col for x in ["Saldo", "Monto", "Lista", "Costo"]) else ""
             for col in df.columns:
                 if any(x in col for x in ["Saldo", "Monto", "Lista", "Costo", "Flete", "Stock"]):
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).round(2)
-            return df[columnas]
+            return df[columns]
         except: 
-            return pd.DataFrame(columns=columnas)
-    return pd.DataFrame(columns=columnas)
+            return pd.DataFrame(columns=columns)
+    return pd.DataFrame(columns=columns)
 
 COLS_ARTICULOS = ["Rubro", "Proveedor", "Accesorio", "Stock", "Costo Base", "Flete", "% Ganancia", "Lista 1 (Cheques)", "Lista 2 (Efectivo)", "Descripcion"]
 COLS_CLIENTES = ["Nombre", "Tel", "Localidad", "Direccion", "Saldo"]
@@ -83,7 +83,6 @@ def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRE
         loc = str(info_cli["Localidad"].values[0]) if not info_cli.empty else "-"
         dir = str(info_cli["Direccion"].values[0]) if not info_cli.empty else "-"
         
-        # Si no hay fecha fija, usa la actual
         fecha_display = fecha_fija if fecha_fija else datetime.now().strftime('%d/%m/%Y %H:%M')
 
         pdf.set_fill_color(240, 240, 240)
@@ -160,28 +159,25 @@ else:
         df_lote_base = pd.DataFrame(columns=["articulo", "rubro", "cantidad", "costos", "flete", "articulo existente/nuevo"])
         st.data_editor(df_lote_base, num_rows="dynamic", use_container_width=True, key="ed_lote_full")
 
-    with tabs[2]: # MAESTRO
+    with tabs[2]: # MAESTRO (CON CÁLCULO CORREGIDO)
         st.header("⚙️ Maestro de Artículos")
-        st.info("💡 Modificá Costo, Flete o % Ganancia y presioná Guardar para recalcular las Listas automáticamente.")
-        
+        st.info("💡 Editá Costo, Flete o % Ganancia. Lista 1 se calcula sobre costo y Lista 2 es un 10% más barata que Lista 1.")
         df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True, key="ed_maestro_full")
         
         if st.button("Guardar Cambios Maestro"):
-            # RECALCULO AUTOMÁTICO ANTES DE GUARDAR
-            # Calculamos el precio base con flete y ganancia
-            # Lista 2 (Efectivo) = (Costo + Flete) * (1 + Ganancia/100)
-            df_ed["Lista 2 (Efectivo)"] = (df_ed["Costo Base"] + df_ed["Flete"]) * (1 + df_ed["% Ganancia"] / 100)
+            # RECALCULO
+            # 1. Lista 1 (Cheques) = (Costo + Flete) * (1 + Ganancia/100)
+            df_ed["Lista 1 (Cheques)"] = (df_ed["Costo Base"] + df_ed["Flete"]) * (1 + df_ed["% Ganancia"] / 100)
             
-            # Lista 1 (Cheques) = Lista 2 * 1.05 (o el cálculo que prefieras para cheques)
-            df_ed["Lista 1 (Cheques)"] = df_ed["Lista 2 (Efectivo)"] * 1.05
+            # 2. Lista 2 (Efectivo) = Lista 1 * 0.90 (10% más barata)
+            df_ed["Lista 2 (Efectivo)"] = df_ed["Lista 1 (Cheques)"] * 0.90
             
-            # Redondeamos a 2 decimales para que quede limpio
+            # Redondeo
             df_ed["Lista 1 (Cheques)"] = df_ed["Lista 1 (Cheques)"].round(2)
             df_ed["Lista 2 (Efectivo)"] = df_ed["Lista 2 (Efectivo)"].round(2)
             
-            # Guardar en el CSV
             df_ed.to_csv(ARCHIVO_ARTICULOS, index=False)
-            st.success("✅ Precios recalculados y base actualizada correctamente.")
+            st.success("Base actualizada con nuevos cálculos (L2 es 10% menor a L1)")
             st.rerun()
 
     with tabs[3]: # CTA CTE
@@ -351,8 +347,8 @@ else:
         c1.metric("Valor Stock", formatear_moneda(v_s))
         c2.metric("Deuda Clientes", formatear_moneda(df_clientes['Saldo'].sum()))
 
-    with tabs[7]: # REMITOS (FECHA DEL DÍA)
-        st.header("📦 Generador de Remitos (Fecha del Día)")
+    with tabs[7]: # REMITOS (FECHA ACTUAL)
+        st.header("📦 Generador de Remitos")
         cli_r = st.selectbox("Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cli_remito")
         
         r1, r2, r3 = st.columns([2, 1, 1])
@@ -367,20 +363,19 @@ else:
 
         if st.session_state.remito_items:
             st.subheader("Detalle del Remito")
-            for index, item in enumerate(st.session_state.remito_items):
+            for idx, item in enumerate(st.session_state.remito_items):
                 cr_item, cr_btn = st.columns([4, 1])
                 with cr_item:
                     st.write(f"**{item['Cant']}x** {item['Producto']} — {formatear_moneda(item['Subtotal'])}")
                 with cr_btn:
-                    if st.button("❌", key=f"del_rem_{index}"):
-                        st.session_state.remito_items.pop(index); st.rerun()
+                    if st.button("❌", key=f"del_rem_{idx}"):
+                        st.session_state.remito_items.pop(idx); st.rerun()
             
             t_remito = round(sum(item["Subtotal"] for item in st.session_state.remito_items), 2)
             st.markdown(f"### TOTAL REMITO: {formatear_moneda(t_remito)}")
             
             rb1, rb2 = st.columns(2)
             with rb1:
-                # Al quitar 'fecha_fija', el PDF toma automáticamente la fecha del sistema
                 pdf_remito = generar_pdf_binario(cli_r, st.session_state.remito_items, t_remito, df_clientes, "REMITO")
                 if pdf_remito:
                     st.download_button("📥 DESCARGAR REMITO (PDF)", pdf_remito, f"Remito_{cli_r}.pdf", "application/pdf", use_container_width=True)
