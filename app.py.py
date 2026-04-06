@@ -49,6 +49,7 @@ df_movs = cargar_datos(ARCHIVO_MOVIMIENTOS, COLS_MOVS)
 
 # Inicializar estados de sesión
 if "carrito" not in st.session_state: st.session_state.carrito = []
+if "remito_items" not in st.session_state: st.session_state.remito_items = []
 if "orden_lista" not in st.session_state: st.session_state.orden_lista = None
 if "confirmar_orden" not in st.session_state: st.session_state.confirmar_orden = False
 if "confirmar_nc" not in st.session_state: st.session_state.confirmar_nc = False
@@ -73,7 +74,7 @@ class PDF(FPDF):
         self.cell(0, 5, "Casilda, Santa Fe | WhatsApp: +54 9 341 351-2049", ln=True)
         self.ln(10)
 
-def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRESUPUESTO"):
+def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRESUPUESTO", fecha_fija=None):
     try:
         pdf = PDF() 
         pdf.add_page()
@@ -81,6 +82,9 @@ def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRE
         tel = str(info_cli["Tel"].values[0]) if not info_cli.empty else "-"
         loc = str(info_cli["Localidad"].values[0]) if not info_cli.empty else "-"
         dir = str(info_cli["Direccion"].values[0]) if not info_cli.empty else "-"
+        
+        # Si no hay fecha fija, usa la actual
+        fecha_display = fecha_fija if fecha_fija else datetime.now().strftime('%d/%m/%Y %H:%M')
 
         pdf.set_fill_color(240, 240, 240)
         pdf.set_font("Helvetica", "B", 11)
@@ -89,7 +93,7 @@ def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRE
         
         pdf.set_font("Helvetica", "B", 10)
         pdf.cell(95, 7, f" CLIENTE: {cliente_nombre}", border="LT")
-        pdf.cell(95, 7, f" FECHA: {datetime.now().strftime('%d/%m/%Y %H:%M')}", border="RT", ln=True)
+        pdf.cell(95, 7, f" FECHA: {fecha_display}", border="RT", ln=True)
         pdf.set_font("Helvetica", "", 10)
         pdf.cell(95, 7, f" TEL: {tel}", border="L")
         pdf.cell(95, 7, f" LOCALIDAD: {loc}", border="R", ln=True)
@@ -140,7 +144,7 @@ if es_cliente:
                     msg = f"Hola! Pedido de {c}x {row['Accesorio']} ({l_tipo})."
                     st.markdown(f"[Confirmar en WhatsApp](https://wa.me/{WHATSAPP_NUM}?text={msg})")
 else:
-    tabs = st.tabs(["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre de Caja"])
+    tabs = st.tabs(["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre de Caja", "📦 Remitos"])
 
     with tabs[0]: # STOCK
         st.header("Inventario Actual")
@@ -328,3 +332,40 @@ else:
         v_s = round((df_stock['Stock'] * df_stock['Costo Base']).sum(), 2)
         c1.metric("Valor Stock", formatear_moneda(v_s))
         c2.metric("Deuda Clientes", formatear_moneda(df_clientes['Saldo'].sum()))
+
+    with tabs[7]: # REMITOS (FECHA DEL DÍA)
+        st.header("📦 Generador de Remitos (Fecha del Día)")
+        cli_r = st.selectbox("Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cli_remito")
+        
+        r1, r2, r3 = st.columns([2, 1, 1])
+        with r1: i_r = st.selectbox("Artículo:", df_stock["Accesorio"].tolist(), key="item_remito")
+        with r2: q_r = st.number_input("Cant:", min_value=1, value=1, key="cant_remito")
+        with r3: l_r = st.selectbox("Lista de Precio:", ["Lista 1 (Cheques)", "Lista 2 (Efectivo)"], key="lista_remito")
+
+        if st.button("➕ AGREGAR AL REMITO"):
+            p_u_r = round(df_stock[df_stock["Accesorio"] == i_r][l_r].values[0], 2)
+            st.session_state.remito_items.append({"Producto": i_r, "Cant": q_r, "Precio U.": p_u_r, "Subtotal": round(p_u_r * q_r, 2)})
+            st.rerun()
+
+        if st.session_state.remito_items:
+            st.subheader("Detalle del Remito")
+            for index, item in enumerate(st.session_state.remito_items):
+                cr_item, cr_btn = st.columns([4, 1])
+                with cr_item:
+                    st.write(f"**{item['Cant']}x** {item['Producto']} — {formatear_moneda(item['Subtotal'])}")
+                with cr_btn:
+                    if st.button("❌", key=f"del_rem_{index}"):
+                        st.session_state.remito_items.pop(index); st.rerun()
+            
+            t_remito = round(sum(item["Subtotal"] for item in st.session_state.remito_items), 2)
+            st.markdown(f"### TOTAL REMITO: {formatear_moneda(t_remito)}")
+            
+            rb1, rb2 = st.columns(2)
+            with rb1:
+                # Al quitar 'fecha_fija', el PDF toma automáticamente la fecha del sistema
+                pdf_remito = generar_pdf_binario(cli_r, st.session_state.remito_items, t_remito, df_clientes, "REMITO")
+                if pdf_remito:
+                    st.download_button("📥 DESCARGAR REMITO (PDF)", pdf_remito, f"Remito_{cli_r}.pdf", "application/pdf", use_container_width=True)
+            with rb2:
+                if st.button("🗑️ LIMPIAR REMITO", use_container_width=True):
+                    st.session_state.remito_items = []; st.rerun()
