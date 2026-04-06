@@ -162,9 +162,27 @@ else:
 
     with tabs[2]: # MAESTRO
         st.header("⚙️ Maestro de Artículos")
+        st.info("💡 Modificá Costo, Flete o % Ganancia y presioná Guardar para recalcular las Listas automáticamente.")
+        
         df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True, key="ed_maestro_full")
+        
         if st.button("Guardar Cambios Maestro"):
-            df_ed.to_csv(ARCHIVO_ARTICULOS, index=False); st.success("Base actualizada"); st.rerun()
+            # RECALCULO AUTOMÁTICO ANTES DE GUARDAR
+            # Calculamos el precio base con flete y ganancia
+            # Lista 2 (Efectivo) = (Costo + Flete) * (1 + Ganancia/100)
+            df_ed["Lista 2 (Efectivo)"] = (df_ed["Costo Base"] + df_ed["Flete"]) * (1 + df_ed["% Ganancia"] / 100)
+            
+            # Lista 1 (Cheques) = Lista 2 * 1.05 (o el cálculo que prefieras para cheques)
+            df_ed["Lista 1 (Cheques)"] = df_ed["Lista 2 (Efectivo)"] * 1.05
+            
+            # Redondeamos a 2 decimales para que quede limpio
+            df_ed["Lista 1 (Cheques)"] = df_ed["Lista 1 (Cheques)"].round(2)
+            df_ed["Lista 2 (Efectivo)"] = df_ed["Lista 2 (Efectivo)"].round(2)
+            
+            # Guardar en el CSV
+            df_ed.to_csv(ARCHIVO_ARTICULOS, index=False)
+            st.success("✅ Precios recalculados y base actualizada correctamente.")
+            st.rerun()
 
     with tabs[3]: # CTA CTE
         st.header("👥 Gestión de Cuentas Corrientes")
