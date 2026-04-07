@@ -114,14 +114,25 @@ with tabs[1]:
     df_lote_template = pd.DataFrame(columns=["rubro", "proveedor", "accesorio", "stock", "costo_base", "flete", "ganancia"])
     ed_lote = st.data_editor(df_lote_template, num_rows="dynamic", use_container_width=True)
     
-    if st.button("Guardar Lote en Base de Datos"):
-        for _, r in ed_lote.iterrows():
-            if r['accesorio']:
-                l1 = (float(r['costo_base']) + float(r['flete'])) * (1 + float(r['ganancia'])/100)
-                ejecutar_query('''INSERT INTO articulos (rubro, proveedor, accesorio, stock, costo_base, flete, ganancia, lista1, lista2) 
-                                 VALUES (?,?,?,?,?,?,?,?,?)''',
-                               (r['rubro'], r['proveedor'], r['accesorio'], r['stock'], r['costo_base'], r['flete'], r['ganancia'], l1, l1*0.9), commit=True)
-        st.success("Lote procesado. Los precios se calcularon automáticamente.")
+    if st.button("Procesar Lote"):
+        for _, row in ed_lote.iterrows():
+            if row['accesorio']: # Solo si la celda no está vacía
+                try:
+                    # Forzamos a que los datos sean números. Si hay una letra, pone 0.0
+                    s_val = float(row['stock']) if row['stock'] else 0.0
+                    c_val = float(row['costo_base']) if row['costo_base'] else 0.0
+                    f_val = float(row['flete']) if row['flete'] else 0.0
+                    g_val = float(row['ganancia']) if row['ganancia'] else 0.0
+                    
+                    l1 = (c_val + f_val) * (1 + g_val/100)
+                    l2 = l1 * 0.90
+                    
+                    ejecutar_query('''INSERT INTO articulos (rubro, proveedor, accesorio, stock, costo_base, flete, ganancia, lista1, lista2) 
+                                     VALUES (?,?,?,?,?,?,?,?,?)''', 
+                                   (str(row['rubro']), str(row['proveedor']), str(row['accesorio']), s_val, c_val, f_val, g_val, l1, l2), commit=True)
+                except Exception as e:
+                    st.error(f"Error en fila {row['accesorio']}: {e}")
+        st.success("Lote procesado correctamente")
         st.rerun()
 
 # TAB 2: EDITOR MAESTRO (MODIFICAR PRECIOS/STOCK EXISTENTE)
