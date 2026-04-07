@@ -10,6 +10,9 @@ from io import BytesIO
 # --- CONFIGURACIÓN DE BASE DE DATOS ---
 DB_NAME = "/app/data/gestion_af_accesorios.db"
 
+if not os.path.exists("/app/data"):
+    os.makedirs("/app/data")
+    
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
