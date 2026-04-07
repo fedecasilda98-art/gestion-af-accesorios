@@ -1,13 +1,13 @@
+# --- LÍNEA TEMPORAL PARA LIMPIAR TODO ---
+if os.path.exists("gestion_af_accesorios.db"):
+    os.remove("gestion_af_accesorios.db")
+# ----------------------------------------
 import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
 import re
 from fpdf import FPDF
-# --- LÍNEA TEMPORAL PARA LIMPIAR TODO ---
-if os.path.exists("gestion_af_accesorios.db"):
-    os.remove("gestion_af_accesorios.db")
-# ----------------------------------------
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Gestión AF Accesorios", layout="wide", initial_sidebar_state="collapsed")
