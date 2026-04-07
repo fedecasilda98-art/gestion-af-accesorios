@@ -131,20 +131,92 @@ with tabs[2]:
         st.success("Base actualizada")
         st.rerun()
 
-# TAB 3: CTA CTE
+# --- TAB 3: CTA CTE (RESTAURADO COMPLETO) ---
 with tabs[3]:
-    st.header("👥 Clientes")
+    st.header("👥 Gestión de Cuentas Corrientes")
+    
     if not df_clientes.empty:
-        cli_sel = st.selectbox("Seleccionar Cliente", df_clientes["nombre"].tolist())
+        # Buscador y Selección
+        cli_sel = st.selectbox("🔍 Seleccionar Cliente:", df_clientes["nombre"].tolist(), key="busqueda_global_cli")
         datos_cli = df_clientes[df_clientes["nombre"] == cli_sel].iloc[0]
-        st.metric("Saldo", formatear_moneda(datos_cli["saldo"]))
-        # Registrar Pago
-        pago = st.number_input("Registrar Entrega de Efectivo:", min_value=0.0)
-        if st.button("Cargar Pago"):
-            ejecutar_query("UPDATE clientes SET saldo = saldo - ? WHERE nombre = ?", (pago, cli_sel), commit=True)
-            ejecutar_query("INSERT INTO movimientos (fecha, cliente, tipo, monto, detalle) VALUES (?,?,?,?,?)", 
-                           (datetime.now().strftime("%d/%m/%Y %H:%M"), cli_sel, "PAGO", pago, "Pago efectivo"), commit=True)
-            st.rerun()
+        
+        # Métricas principales
+        c_info1, c_info2, c_info3 = st.columns(3)
+        c_info1.metric("Saldo Pendiente", formatear_moneda(datos_cli["saldo"]))
+        c_info2.write(f"📞 **Tel:** {datos_cli['tel']} | 📍 **Loc:** {datos_cli['localidad']}")
+        c_info3.write(f"🏠 **Dir:** {datos_cli['direccion']}")
+        
+        st.divider()
+        
+        # Operaciones: Historial y Pagos
+        col_movs, col_ops = st.columns([2, 1])
+        with col_movs:
+            st.subheader("📜 Historial de Movimientos")
+            hist = df_movs[df_movs["cliente"] == cli_sel].sort_index(ascending=False)
+            if not hist.empty:
+                st.dataframe(hist[["fecha", "tipo", "monto", "detalle"]], use_container_width=True, hide_index=True)
+            else:
+                st.info("Sin movimientos registrados.")
+
+        with col_ops:
+            st.subheader("💰 Registrar Pago")
+            monto_p = st.number_input("Monto a cobrar $:", min_value=0.0, step=100.0, key="pago_input")
+            metodo_p = st.selectbox("Método:", ["Efectivo", "Transferencia", "Cheque"])
+            if st.button("Confirmar Pago", use_container_width=True, type="primary"):
+                if monto_p > 0:
+                    # Actualizar Saldo
+                    ejecutar_query("UPDATE clientes SET saldo = saldo - ? WHERE nombre = ?", (monto_p, cli_sel), commit=True)
+                    # Registrar Movimiento
+                    f_actual = datetime.now().strftime("%d/%m/%Y %H:%M")
+                    ejecutar_query("INSERT INTO movimientos (fecha, cliente, tipo, monto, metodo, detalle) VALUES (?,?,?,?,?,?)", 
+                                   (f_actual, cli_sel, "PAGO", monto_p, metodo_p, f"Pago recibido vía {metodo_p}"), commit=True)
+                    st.success(f"¡Pago de {formatear_moneda(monto_p)} registrado!")
+                    st.rerun()
+
+    st.divider()
+    
+    # --- SECCIÓN DE CONFIGURACIÓN (ALTAS, BAJAS Y MODIFICACIONES) ---
+    st.subheader("⚙️ Administración de Clientes")
+    c_alta, c_mod, c_del = st.columns(3)
+    
+    with c_alta:
+        with st.expander("➕ Nuevo Cliente"):
+            n_n = st.text_input("Nombre Completo")
+            n_t = st.text_input("Teléfono")
+            n_l = st.text_input("Localidad")
+            n_d = st.text_input("Dirección")
+            if st.button("Guardar Nuevo"):
+                if n_n:
+                    ejecutar_query("INSERT INTO clientes (nombre, tel, localidad, direccion, saldo) VALUES (?,?,?,?,?)", 
+                                   (n_n, n_t, n_l, n_d, 0.0), commit=True)
+                    st.success(f"Cliente {n_n} creado.")
+                    st.rerun()
+
+    with c_mod:
+        with st.expander("✏️ Editar Datos"):
+            if not df_clientes.empty:
+                cli_e = st.selectbox("Elegir para editar:", df_clientes["nombre"].tolist(), key="ed_cli_sel")
+                idx_cli = df_clientes[df_clientes["nombre"] == cli_sel].iloc[0]
+                e_t = st.text_input("Nuevo Tel", value=str(idx_cli['tel']))
+                e_l = st.text_input("Nueva Loc", value=str(idx_cli['localidad']))
+                e_d = st.text_input("Nueva Dir", value=str(idx_cli['direccion']))
+                e_s = st.number_input("Corregir Saldo $", value=float(idx_cli['saldo']))
+                if st.button("Actualizar"):
+                    ejecutar_query("UPDATE clientes SET tel=?, localidad=?, direccion=?, saldo=? WHERE nombre=?", 
+                                   (e_t, e_l, e_d, e_s, cli_e), commit=True)
+                    st.success("Datos actualizados.")
+                    st.rerun()
+
+    with c_del:
+        with st.expander("🗑️ Borrar Cliente"):
+            if not df_clientes.empty:
+                cli_d = st.selectbox("Elegir para eliminar:", df_clientes["nombre"].tolist(), key="del_cli_sel")
+                st.warning(f"¿Estás seguro de borrar a {cli_d}?")
+                if st.checkbox("Confirmar eliminación"):
+                    if st.button("Eliminar Permanente", type="primary"):
+                        ejecutar_query("DELETE FROM clientes WHERE nombre = ?", (cli_d,), commit=True)
+                        st.success("Cliente eliminado.")
+                        st.rerun()
 
 # TAB 4: PRESUPUESTADOR
 with tabs[4]:
