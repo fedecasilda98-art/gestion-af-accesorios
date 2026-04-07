@@ -1,7 +1,3 @@
-# --- LÍNEA TEMPORAL PARA LIMPIAR TODO ---
-if os.path.exists("gestion_af_accesorios.db"):
-    os.remove("gestion_af_accesorios.db")
-# ----------------------------------------
 import streamlit as st
 import pandas as pd
 import os
