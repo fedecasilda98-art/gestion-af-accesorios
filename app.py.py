@@ -1,4 +1,4 @@
-import streamlit as st
+ºimport streamlit as st
 import pandas as pd
 import sqlite3
 import os
@@ -140,15 +140,26 @@ with tabs[2]:
     st.header("Editor Maestro de Artículos")
     if not df_stock.empty:
         ed_m = st.data_editor(df_stock, use_container_width=True, hide_index=True, key="maestro_editor")
-        if st.button("Aplicar Cambios Globales"):
-            # Recalcular precios antes de guardar
-            ed_m["lista1"] = (ed_m["costo_base"] + ed_m["flete"]) * (1 + ed_m["ganancia"] / 100)
-            ed_m["lista2"] = ed_m["lista1"] * 0.90
-            conn = sqlite3.connect(DB_NAME)
-            ed_m.to_sql("articulos", conn, if_exists="replace", index=False)
-            conn.close()
-            st.success("Cambios guardados y precios actualizados.")
-            st.rerun()
+        if st.button("Procesar Lote"):
+        for _, row in ed_lote.iterrows():
+            if row['accesorio']:
+                try:
+                    # Forzamos conversión a número para evitar el TypeError
+                    s_val = float(row['stock']) if row['stock'] else 0.0
+                    c_val = float(row['costo_base']) if row['costo_base'] else 0.0
+                    f_val = float(row['flete']) if row['flete'] else 0.0
+                    g_val = float(row['ganancia']) if row['ganancia'] else 0.0
+                    
+                    l1 = (c_val + f_val) * (1 + g_val/100)
+                    l2 = l1 * 0.90
+                    
+                    ejecutar_query('''INSERT INTO articulos (rubro, proveedor, accesorio, stock, costo_base, flete, ganancia, lista1, lista2) 
+                                     VALUES (?,?,?,?,?,?,?,?,?)''', 
+                                   (str(row['rubro']), str(row['proveedor']), str(row['accesorio']), s_val, c_val, f_val, g_val, l1, l2), commit=True)
+                except Exception as e:
+                    st.error(f"Error en fila {row['accesorio']}: Asegurate de usar números.")
+        st.success("Lote procesado correctamente")
+        st.rerun()
 
 # TAB 3: CUENTAS CORRIENTES (COMPLETO)
 with tabs[3]:
@@ -191,13 +202,25 @@ with tabs[4]:
         v_cant = v_col2.number_input("Cant.", min_value=1)
         v_lista = v_col3.selectbox("Lista", ["lista1", "lista2"])
         
-        if st.button("Agregar al Carrito"):
-            p_match = df_stock[df_stock["accesorio"] == v_prod].iloc[0]
-            precio_u = p_match[v_lista]
-            st.session_state.carrito.append({
-                "Producto": v_prod, "Cant": v_cant, "Precio U.": precio_u, "Subtotal": v_cant * precio_u
-            })
-            st.rerun()
+        if st.button("Agregar Item"):
+        # Verificamos que el stock no esté vacío antes de buscar (Evita IndexError)
+        if not df_stock.empty:
+            articulos_match = df_stock[df_stock["accesorio"] == art_v]
+            
+            if not articulos_match.empty:
+                # Acceso seguro al valor
+                p_u = float(articulos_match[lst_v].values[0])
+                st.session_state.carrito.append({
+                    "Producto": art_v, 
+                    "Cant": cant_v, 
+                    "Precio U.": p_u, 
+                    "Subtotal": p_u * cant_v
+                })
+                st.rerun()
+            else:
+                st.error("Seleccioná un producto válido.")
+        else:
+            st.warning("No hay productos cargados en el sistema.")
 
         if st.session_state.carrito:
             st.table(st.session_state.carrito)
