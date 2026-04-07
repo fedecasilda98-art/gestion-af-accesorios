@@ -191,33 +191,30 @@ with tabs[4]:
         lst_v = col3.selectbox("Lista", ["lista1", "lista2"])
         
         if st.button("Agregar Item"):
-            # Verificamos de forma segura que el artículo exista en df_stock
+            # 1. Buscamos el producto de forma exacta
             match = df_stock[df_stock["accesorio"] == art_v]
+            
+            # 2. Verificamos si encontramos ALGO
             if not match.empty:
-                p_u = float(match[lst_v].values[0])
-                st.session_state.carrito.append({
-                    "Producto": art_v, "Cant": cant_v, "Precio U.": p_u, "Subtotal": p_u * cant_v
-                })
-                st.rerun()
+                try:
+                    # 3. Extraemos el precio de la lista seleccionada
+                    # Usamos .iloc[0] que es más seguro que .values[0]
+                    valor_lista = match[lst_v].iloc[0]
+                    
+                    # 4. Forzamos que sea un número (float) para evitar errores matemáticos
+                    p_u = float(valor_lista)
+                    
+                    st.session_state.carrito.append({
+                        "Producto": art_v, 
+                        "Cant": cant_v, 
+                        "Precio U.": p_u, 
+                        "Subtotal": p_u * cant_v
+                    })
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error con el precio del producto: {e}")
             else:
-                st.error("Error al buscar el producto.")
-
-        if st.session_state.carrito:
-            st.table(st.session_state.carrito)
-            total_v = sum(i["Subtotal"] for i in st.session_state.carrito)
-            st.subheader(f"Total: {formatear_moneda(total_v)}")
-            if st.button("Confirmar Venta"):
-                ejecutar_query("UPDATE clientes SET saldo = saldo + ? WHERE nombre = ?", (total_v, cli_v), commit=True)
-                for item in st.session_state.carrito:
-                    ejecutar_query("UPDATE articulos SET stock = stock - ? WHERE accesorio = ?", (item["Cant"], item["Producto"]), commit=True)
-                ejecutar_query("INSERT INTO movimientos (fecha, cliente, tipo, monto, detalle) VALUES (?,?,?,?,?)", 
-                               (datetime.now().strftime("%d/%m/%Y %H:%M"), cli_v, "VENTA", total_v, "Venta de accesorios"), commit=True)
-                st.session_state.carrito = []
-                st.success("Venta Grabada")
-                st.rerun()
-            if st.button("Vaciar Carrito"):
-                st.session_state.carrito = []
-                st.rerun()
+                st.error(f"No se encontró el producto '{art_v}' en la base de datos. Intentá recargar la página.")
     else:
         st.warning("Cargá productos en la pestaña 'Lote' para poder vender.")
 
