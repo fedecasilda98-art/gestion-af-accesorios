@@ -231,9 +231,20 @@ with tabs[4]:
     with col3: lst_v = st.selectbox("Lista", ["lista1", "lista2"], key="v_l")
     
     if st.button("Agregar Item"):
-        p_u = df_stock[df_stock["accesorio"] == art_v][lst_v].values[0]
-        st.session_state.carrito.append({"Producto": art_v, "Cant": cant_v, "Precio U.": p_u, "Subtotal": p_u * cant_v})
-        st.rerun()
+        # Verificamos si hay artículos cargados para evitar el error de la foto
+        articulos_match = df_stock[df_stock["accesorio"] == art_v]
+        
+        if not articulos_match.empty:
+            p_u = articulos_match[lst_v].values[0]
+            st.session_state.carrito.append({
+                "Producto": art_v, 
+                "Cant": cant_v, 
+                "Precio U.": p_u, 
+                "Subtotal": p_u * cant_v
+            })
+            st.rerun()
+        else:
+            st.error("No se encontró el artículo o la lista está vacía. Cargá productos en la pestaña Maestro primero.")
     
     if st.session_state.carrito:
         st.table(st.session_state.carrito)
