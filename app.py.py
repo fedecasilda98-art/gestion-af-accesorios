@@ -27,7 +27,7 @@ def ejecutar_query(query, params=(), commit=False):
         else:
             return pd.read_sql_query(query, conn)
     except Exception as e:
-        st.error(f"Error de DB: {e}")
+        st.error(f"Error de base de datos: {e}")
     finally:
         conn.close()
 
@@ -45,12 +45,14 @@ def init_db():
 
 init_db()
 
-# --- 2. UTILIDADES DE LIMPIEZA Y FORMATO ---
-def limpiar_numero(val):
+# --- 2. UTILIDADES DE LIMPIEZA (EL "ESCUDO" CONTRA ERRORES) ---
+def limpiar_num(val):
+    """Evita el TypeError convirtiendo cualquier cosa a float seguro."""
     if pd.isna(val) or str(val).strip() == "": return 0.0
     try:
-        s_val = str(val).replace('$', '').replace(' ', '').replace(',', '.').strip()
-        return float(s_val)
+        # Quita $, espacios y arregla comas por puntos
+        s = str(val).replace('$', '').replace(' ', '').replace(',', '.').strip()
+        return float(s)
     except: return 0.0
 
 def formatear_moneda(valor):
@@ -89,34 +91,26 @@ if "carrito" not in st.session_state: st.session_state.carrito = []
 # --- 4. INTERFAZ ---
 tabs = st.tabs(["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Cta Cte", "📄 Ventas", "📋 Historial", "🏁 Cierre", "📦 Remitos"])
 
-# TAB 0: STOCK
-with tabs[0]:
-    st.header("Inventario Real-Time")
+with tabs[0]: # STOCK
+    st.header("Inventario Actual")
     if not df_stock.empty:
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Costo Stock", formatear_moneda((df_stock['costo_base'] * df_stock['stock']).sum()))
-        c2.metric("Total L1", formatear_moneda((df_stock['lista1'] * df_stock['stock']).sum()))
-        c3.metric("Total L2", formatear_moneda((df_stock['lista2'] * df_stock['stock']).sum()))
         st.dataframe(df_stock, use_container_width=True, hide_index=True)
-    else: st.info("Inventario vacío.")
 
-# TAB 1: LOTE
-with tabs[1]:
-    st.header("🚚 Carga por Lote")
+with tabs[1]: # LOTE (PROTEGIDO)
+    st.header("🚚 Carga Masiva")
+    st.info("Pegá tus datos aquí. No importa si tienen símbolos de pesos o comas.")
     df_guia = pd.DataFrame(columns=["rubro", "proveedor", "accesorio", "stock", "costo_base", "flete", "ganancia"])
     ed_lote = st.data_editor(df_guia, num_rows="dynamic", use_container_width=True)
     if st.button("🚀 Procesar e Importar"):
         for _, r in ed_lote.iterrows():
             if r['accesorio']:
-                s, cb, fl, ga = limpiar_numero(r['stock']), limpiar_numero(r['costo_base']), limpiar_numero(r['flete']), limpiar_numero(r['ganancia'])
+                s, cb, fl, ga = limpiar_num(r['stock']), limpiar_num(r['costo_base']), limpiar_num(r['flete']), limpiar_num(r['ganancia'])
                 l1 = (cb + fl) * (1 + ga/100)
                 ejecutar_query('''INSERT INTO articulos (rubro, proveedor, accesorio, stock, costo_base, flete, ganancia, lista1, lista2) 
                                  VALUES (?,?,?,?,?,?,?,?,?)''', (str(r['rubro']), str(r['proveedor']), str(r['accesorio']), s, cb, fl, ga, l1, l1*0.9), commit=True)
-        st.success("Lote cargado correctamente.")
-        st.rerun()
+        st.success("Importación exitosa."); st.rerun()
 
-# TAB 2: MAESTRO (CON ELIMINACIÓN MÚLTIPLE)
-with tabs[2]:
+with tabs[2]: # MAESTRO (CON ELIMINACIÓN MÚLTIPLE)
     st.header("⚙️ Editor Maestro")
     if not df_stock.empty:
         df_maestro = df_stock.copy()
@@ -129,72 +123,63 @@ with tabs[2]:
             st.rerun()
         if c_m2.button("💾 Guardar Cambios"):
             df_upd = ed_maestro.drop(columns=["Seleccionar"])
+            # Recalcular precios por si se editó costo/ganancia
+            df_upd["lista1"] = (df_upd["costo_base"].apply(limpiar_num) + df_upd["flete"].apply(limpiar_num)) * (1 + df_upd["ganancia"].apply(limpiar_num)/100)
+            df_upd["lista2"] = df_upd["lista1"] * 0.9
             conn = sqlite3.connect(DB_NAME); df_upd.to_sql("articulos", conn, if_exists="replace", index=False); conn.close()
-            st.success("Cambios guardados."); st.rerun()
+            st.success("Datos actualizados."); st.rerun()
 
-# TAB 3: CTA CTE
-with tabs[3]:
-    st.header("👥 Gestión de Cuentas Corrientes")
+with tabs[3]: # CTA CTE
+    st.header("👥 Gestión de Clientes")
     if not df_clientes.empty:
-        cli_sel = st.selectbox("Seleccionar Cliente:", df_clientes["nombre"].tolist(), key="cta_sel")
+        cli_sel = st.selectbox("Cliente:", df_clientes["nombre"].tolist())
         datos_cli = df_clientes[df_clientes["nombre"] == cli_sel].iloc[0]
         st.metric("Saldo Pendiente", formatear_moneda(datos_cli["saldo"]))
         m_pago = st.number_input("Registrar Pago $", min_value=0.0)
         if st.button("Confirmar Pago"):
             ejecutar_query("UPDATE clientes SET saldo = saldo - ? WHERE nombre = ?", (m_pago, cli_sel), commit=True)
-            ejecutar_query("INSERT INTO movimientos (fecha, cliente, tipo, monto, detalle) VALUES (?,?,?,?,?)", 
-                           (datetime.now().strftime("%d/%m/%Y %H:%M"), cli_sel, "PAGO", m_pago, "Pago recibido"), commit=True)
+            ejecutar_query("INSERT INTO movimientos (fecha, cliente, tipo, monto, detalle) VALUES (?,?,?,?,?)", (datetime.now().strftime("%d/%m/%Y %H:%M"), cli_sel, "PAGO", m_pago, "Cobro"), commit=True)
             st.rerun()
     with st.expander("Nuevo Cliente"):
         n_n = st.text_input("Nombre"); 
         if st.button("Crear"): ejecutar_query("INSERT INTO clientes (nombre, saldo) VALUES (?,0.0)", (n_n,), commit=True); st.rerun()
 
-# TAB 4: VENTAS
-with tabs[4]:
+with tabs[4]: # VENTAS (SOLUCIÓN AL INDEXERROR)
     st.header("📄 Ventas")
     if not df_stock.empty:
-        c_ven = st.selectbox("Cliente:", df_clientes["nombre"].tolist() if not df_clientes.empty else ["Final"])
+        c_ven = st.selectbox("Cliente:", df_clientes["nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"])
         col1, col2, col3 = st.columns([2,1,1])
         p_ven = col1.selectbox("Producto", df_stock["accesorio"].unique())
-        q_ven = col2.number_input("Cant", 1)
+        q_ven = col2.number_input("Cantidad", 1)
         l_ven = col3.selectbox("Lista", ["lista1", "lista2"])
-        if st.button("🛒 Añadir"):
+        if st.button("🛒 Añadir al Carrito"):
             match = df_stock[df_stock["accesorio"] == p_ven]
             if not match.empty:
                 pre = float(match[l_ven].values[0])
                 st.session_state.carrito.append({"Producto": p_ven, "Cant": q_ven, "Precio U.": pre, "Subtotal": pre * q_ven}); st.rerun()
+    else: st.warning("Cargá stock para poder vender.")
     if st.session_state.carrito:
         st.table(st.session_state.carrito)
         if st.button("Finalizar Venta"):
             tot = sum(i['Subtotal'] for i in st.session_state.carrito)
             ejecutar_query("UPDATE clientes SET saldo = saldo + ? WHERE nombre = ?", (tot, c_ven), commit=True)
             for i in st.session_state.carrito: ejecutar_query("UPDATE articulos SET stock = stock - ? WHERE accesorio = ?", (i['Cant'], i['Producto']), commit=True)
-            ejecutar_query("INSERT INTO movimientos (fecha, cliente, tipo, monto, detalle) VALUES (?,?,?,?,?)", (datetime.now().strftime("%d/%m/%Y %H:%M"), c_ven, "VENTA", tot, "Venta Accesorios"), commit=True)
-            st.session_state.carrito = []; st.success("Venta Grabada"); st.rerun()
+            ejecutar_query("INSERT INTO movimientos (fecha, cliente, tipo, monto, detalle) VALUES (?,?,?,?,?)", (datetime.now().strftime("%d/%m/%Y %H:%M"), c_ven, "VENTA", tot, "Venta"), commit=True)
+            st.session_state.carrito = []; st.rerun()
 
-# TAB 5: HISTORIAL
-with tabs[5]:
-    st.header("📋 Historial de Movimientos")
-    st.dataframe(df_movs.iloc[::-1], use_container_width=True, hide_index=True)
+with tabs[5]: # HISTORIAL
+    st.header("📋 Movimientos")
+    st.dataframe(df_movs.iloc[::-1], use_container_width=True)
 
-# TAB 6: CIERRE (REINSTALADO)
-with tabs[6]:
-    st.header("🏁 Resumen de Caja y Deudas")
-    c_c1, c_c2 = st.columns(2)
-    total_deuda = df_clientes["saldo"].sum() if not df_clientes.empty else 0
-    total_stock_costo = (df_stock["stock"] * df_stock["costo_base"]).sum() if not df_stock.empty else 0
-    c_c1.metric("Deuda Total de Clientes", formatear_moneda(total_deuda))
-    c_c2.metric("Inversión en Stock (Costo)", formatear_moneda(total_stock_costo))
-    st.divider()
-    st.write("Últimos 10 movimientos:")
-    st.dataframe(df_movs.tail(10).iloc[::-1], use_container_width=True)
+with tabs[6]: # CIERRE (REINSTALADO)
+    st.header("🏁 Caja y Resumen")
+    c1, c2 = st.columns(2)
+    c1.metric("Deuda Clientes", formatear_moneda(df_clientes["saldo"].sum()) if not df_clientes.empty else "$ 0")
+    c2.metric("Inversión Stock", formatear_moneda((df_stock["stock"] * df_stock["costo_base"]).sum()) if not df_stock.empty else "$ 0")
 
-# TAB 7: REMITOS
-with tabs[7]:
-    st.header("📦 Generar Remito PDF")
+with tabs[7]: # REMITOS
+    st.header("📦 Generar Remito")
     if st.session_state.carrito:
-        c_rem = st.selectbox("Para:", df_clientes["nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"])
-        if st.button("Generar PDF"):
-            pdf_b = generar_pdf_binario(c_rem, st.session_state.carrito, sum(i['Subtotal'] for i in st.session_state.carrito))
-            st.download_button("Descargar Remito", pdf_b, f"Remito_{c_rem}.pdf", "application/pdf")
-    else: st.info("El carrito está vacío.")
+        if st.button("Bajar PDF"):
+            pdf_b = generar_pdf_binario("Cliente", st.session_state.carrito, sum(i['Subtotal'] for i in st.session_state.carrito))
+            st.download_button("Descargar", pdf_b, "remito.pdf", "application/pdf")
