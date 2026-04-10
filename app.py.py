@@ -10,10 +10,11 @@ from io import BytesIO
 st.set_page_config(page_title="Gestión AF Accesorios", layout="wide", initial_sidebar_state="collapsed")
 
 # Archivos Base
-ARCHIVO_ARTICULOS = "lista_articulos_interna.csv"
-ARCHIVO_CLIENTES = "clientes_base.csv"
-ARCHIVO_MOVIMIENTOS = "movimientos_clientes.csv"
-CARPETA_FOTOS = "fotos_productos"
+# Cambia esto al principio de tu código
+ARCHIVO_ARTICULOS = "data/lista_articulos_interna.csv"
+ARCHIVO_CLIENTES = "data/clientes_base.csv"
+ARCHIVO_MOVIMIENTOS = "data/movimientos_clientes.csv"
+CARPETA_FOTOS = "data/fotos_productos"
 WHATSAPP_NUM = "5493413512049"
 
 # Detectar Modo Cliente
