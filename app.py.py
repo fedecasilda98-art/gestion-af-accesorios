@@ -12,6 +12,15 @@ st.set_page_config(page_title="Gestión AF Accesorios", layout="wide", initial_s
 # Archivos Base
 # Cambia esto al principio de tu código
 ARCHIVO_ARTICULOS = "data/lista_articulos_interna.csv"
+
+# --- BLOQUE DE DIAGNÓSTICO ---
+st.sidebar.write("### 🔍 Estado de Archivos")
+if os.path.exists("data"):
+    st.sidebar.success("Carpeta 'data' encontrada")
+    archivos_en_data = os.listdir("data")
+    st.sidebar.write(f"Archivos: {archivos_en_data}")
+else:
+    st.sidebar.error("Carpeta 'data' NO EXISTE")
 ARCHIVO_CLIENTES = "data/clientes_base.csv"
 ARCHIVO_MOVIMIENTOS = "data/movimientos_clientes.csv"
 CARPETA_FOTOS = "data/fotos_productos"
