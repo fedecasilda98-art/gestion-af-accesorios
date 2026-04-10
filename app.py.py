@@ -383,3 +383,23 @@ else:
             with rb2:
                 if st.button("🗑️ LIMPIAR REMITO", use_container_width=True):
                     st.session_state.remito_items = []; st.rerun()
+
+# --- HERRAMIENTA DE CARGA (SOLO USAR UNA VEZ) ---
+st.divider()
+with st.expander("🚀 CARGAR BASES DE DATOS AL VOLUMEN"):
+    st.write("Seleccioná el archivo de tu PC y el destino en el servidor:")
+    archivo_subido = st.file_uploader("Elegir archivo CSV", type="csv")
+    destino = st.selectbox("¿Qué archivo estás subiendo?", 
+                          [ARCHIVO_ARTICULOS, ARCHIVO_CLIENTES, ARCHIVO_MOVIMIENTOS])
+    
+    if st.button("Guardar en Railway"):
+        if archivo_subido:
+            # Crea la carpeta data si no existe
+            if not os.path.exists("data"):
+                os.makedirs("data")
+            
+            # Guarda el archivo físicamente en el volumen
+            with open(destino, "wb") as f:
+                f.write(archivo_subido.getbuffer())
+            st.success(f"✅ ¡{destino} guardado correctamente!")
+            st.rerun()
