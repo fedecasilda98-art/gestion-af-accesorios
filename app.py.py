@@ -21,6 +21,7 @@ if os.path.exists("data"):
     st.sidebar.write(f"Archivos: {archivos_en_data}")
 else:
     st.sidebar.error("Carpeta 'data' NO EXISTE")
+ARCHIVO_ARTICULOS = "data/lista_articulos_interna.csv"
 ARCHIVO_CLIENTES = "data/clientes_base.csv"
 ARCHIVO_MOVIMIENTOS = "data/movimientos_clientes.csv"
 CARPETA_FOTOS = "data/fotos_productos"
