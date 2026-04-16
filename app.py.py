@@ -165,10 +165,69 @@ else:
             c3.metric("Total Lista 2", formatear_moneda((df_stock['Lista 2 (Efectivo)'] * df_stock['Stock']).sum()))
         st.dataframe(df_stock, use_container_width=True, hide_index=True)
 
-    with tabs[1]: # LOTE
+    with tabs[1]: # LOTE (Pestaña Activada)
         st.header("🚚 Carga por Lote")
-        df_lote_base = pd.DataFrame(columns=["articulo", "rubro", "cantidad", "costos", "flete", "articulo existente/nuevo"])
-        st.data_editor(df_lote_base, num_rows="dynamic", use_container_width=True, key="ed_lote_full")
+        st.info("Escribí los datos en la tabla. Al finalizar, presioná el botón para procesarlos.")
+        
+        # Estructura para que la tabla esté vacía y lista para llenar
+        df_lote_nuevo = pd.DataFrame(columns=COLS_ARTICULOS)
+        
+        # Editor de datos
+        ed_lote = st.data_editor(
+            df_lote_nuevo, 
+            num_rows="dynamic", 
+            use_container_width=True, 
+            key="editor_lote_activo"
+        )
+        
+        if st.button("🚀 PROCESAR E INCORPORAR AL STOCK", type="primary"):
+            if not ed_lote.empty:
+                # Filtrar solo las filas que tengan nombre de accesorio
+                filas_validas = ed_lote[ed_lote["Accesorio"].str.strip() != ""].copy()
+                
+                if not filas_validas.empty:
+                    # Función interna de limpieza para evitar errores de texto/número
+                    def limpiar(v):
+                        try:
+                            if pd.isna(v): return 0.0
+                            return round(float(str(v).replace('$', '').replace('.', '').replace(',', '.').strip()), 2)
+                        except: return 0.0
+
+                    # Procesar cada fila del lote
+                    nuevos_items = []
+                    for _, row in filas_validas.iterrows():
+                        cb = limpiar(row["Costo Base"])
+                        fl = limpiar(row["Flete"])
+                        ga = limpiar(row["% Ganancia"])
+                        stk = limpiar(row["Stock"])
+                        
+                        # Calculamos los precios automáticamente
+                        l1 = round((cb + fl) * (1 + (ga / 100)), 2)
+                        l2 = round(l1 * 0.90, 2) # 10% de descuento para L2
+                        
+                        nuevos_items.append({
+                            "Rubro": str(row["Rubro"]),
+                            "Proveedor": str(row["Proveedor"]),
+                            "Accesorio": str(row["Accesorio"]),
+                            "Stock": stk,
+                            "Costo Base": cb,
+                            "Flete": fl,
+                            "% Ganancia": ga,
+                            "Lista 1 (Cheques)": l1,
+                            "Lista 2 (Efectivo)": l2,
+                            "Descripcion": str(row["Descripcion"])
+                        })
+                    
+                    # Unir con el stock actual y guardar
+                    df_nuevos = pd.DataFrame(nuevos_items)
+                    df_final = pd.concat([df_stock, df_nuevos], ignore_index=True)
+                    
+                    # Guardar físicamente en el archivo
+                    df_final.to_csv(ARCHIVO_ARTICULOS, index=False)
+                    st.success(f"✅ Se agregaron {len(nuevos_items)} artículos correctamente.")
+                    st.rerun()
+                else:
+                    st.warning("⚠️ No hay datos válidos para cargar.")
 
     with tabs[2]: # MAESTRO (CON CÁLCULO CORREGIDO)
         st.header("⚙️ Maestro de Artículos")
