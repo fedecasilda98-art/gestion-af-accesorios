@@ -165,51 +165,51 @@ else:
             c3.metric("Total Lista 2", formatear_moneda((df_stock['Lista 2 (Efectivo)'] * df_stock['Stock']).sum()))
         st.dataframe(df_stock, use_container_width=True, hide_index=True)
 
-    with tabs[1]: # LOTE (Pestaña Activada)
+  with tabs[1]: # LOTE
         st.header("🚚 Carga por Lote")
-        st.info("Escribí los datos en la tabla. Al finalizar, presioná el botón para procesarlos.")
+        st.info("💡 Escribí o pegá los artículos nuevos aquí abajo. Lista 1 y 2 se calculan solas.")
         
-        # Estructura para que la tabla esté vacía y lista para llenar
-        df_lote_nuevo = pd.DataFrame(columns=COLS_ARTICULOS)
+        # 1. Definimos las columnas que queremos ver en la carga rápida
+        cols_carga = ["Rubro", "Proveedor", "Accesorio", "Stock", "Costo Base", "Flete", "% Ganancia", "Descripcion"]
         
-        # Editor de datos
+        # 2. Creamos un DataFrame vacío con esas columnas
+        df_lote_nuevo = pd.DataFrame(columns=cols_carga)
+        
+        # 3. El Editor de Datos (Asegurate que el key sea único)
         ed_lote = st.data_editor(
             df_lote_nuevo, 
             num_rows="dynamic", 
             use_container_width=True, 
-            key="editor_lote_activo"
+            key="v3_editor_lote"
         )
         
-        if st.button("🚀 PROCESAR E INCORPORAR AL STOCK", type="primary"):
+        if st.button("🚀 PROCESAR E INCORPORAR AL STOCK"):
             if not ed_lote.empty:
-                # Filtrar solo las filas que tengan nombre de accesorio
-                filas_validas = ed_lote[ed_lote["Accesorio"].str.strip() != ""].copy()
+                # Limpiamos las filas vacías
+                filas_validas = ed_lote[ed_lote["Accesorio"].fillna("") != ""].copy()
                 
                 if not filas_validas.empty:
-                    # Función interna de limpieza para evitar errores de texto/número
-                    def limpiar(v):
+                    def limpiar_lote(v):
                         try:
-                            if pd.isna(v): return 0.0
-                            return round(float(str(v).replace('$', '').replace('.', '').replace(',', '.').strip()), 2)
+                            if pd.isna(v) or v == "": return 0.0
+                            return round(float(str(v).replace('$', '').replace(',', '.').strip()), 2)
                         except: return 0.0
 
-                    # Procesar cada fila del lote
                     nuevos_items = []
                     for _, row in filas_validas.iterrows():
-                        cb = limpiar(row["Costo Base"])
-                        fl = limpiar(row["Flete"])
-                        ga = limpiar(row["% Ganancia"])
-                        stk = limpiar(row["Stock"])
+                        cb = limpiar_lote(row["Costo Base"])
+                        fl = limpiar_lote(row["Flete"])
+                        ga = limpiar_lote(row["% Ganancia"])
                         
-                        # Calculamos los precios automáticamente
+                        # Cálculo automático
                         l1 = round((cb + fl) * (1 + (ga / 100)), 2)
-                        l2 = round(l1 * 0.90, 2) # 10% de descuento para L2
+                        l2 = round(l1 * 0.90, 2)
                         
                         nuevos_items.append({
                             "Rubro": str(row["Rubro"]),
                             "Proveedor": str(row["Proveedor"]),
                             "Accesorio": str(row["Accesorio"]),
-                            "Stock": stk,
+                            "Stock": limpiar_lote(row["Stock"]),
                             "Costo Base": cb,
                             "Flete": fl,
                             "% Ganancia": ga,
@@ -218,16 +218,16 @@ else:
                             "Descripcion": str(row["Descripcion"])
                         })
                     
-                    # Unir con el stock actual y guardar
+                    # Unir y guardar en el archivo del Volumen de Railway
                     df_nuevos = pd.DataFrame(nuevos_items)
                     df_final = pd.concat([df_stock, df_nuevos], ignore_index=True)
                     
-                    # Guardar físicamente en el archivo
+                    # GUARDADO CRÍTICO
                     df_final.to_csv(ARCHIVO_ARTICULOS, index=False)
-                    st.success(f"✅ Se agregaron {len(nuevos_items)} artículos correctamente.")
+                    st.success(f"✅ ¡{len(nuevos_items)} artículos cargados con éxito!")
                     st.rerun()
                 else:
-                    st.warning("⚠️ No hay datos válidos para cargar.")
+                    st.warning("No hay datos para cargar.")
 
     with tabs[2]: # MAESTRO (CON CÁLCULO CORREGIDO)
         st.header("⚙️ Maestro de Artículos")
