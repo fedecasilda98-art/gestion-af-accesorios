@@ -7,7 +7,7 @@ from fpdf import FPDF
 from io import BytesIO
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Gestión AF Accesorios", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="TEST DE ACTUALIZACION 123", layout="wide")
 
 # Archivos Base
 # Cambia esto al principio de tu código
