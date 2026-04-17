@@ -165,20 +165,58 @@ else:
             c3.metric("Total Lista 2", formatear_moneda((df_stock['Lista 2 (Efectivo)'] * df_stock['Stock']).sum()))
         st.dataframe(df_stock, use_container_width=True, hide_index=True)
 
-  with tabs[1]: # LOTE - VERSIÓN DE PRUEBA
+ with tabs[1]: # LOTE - REPARADO
         st.header("🚚 Carga por Lote")
-        st.warning("⚠️ SI VES ESTE CARTEL, EL CÓDIGO SE ACTUALIZÓ CORRECTAMENTE")
+        st.info("💡 Completá los datos y presioná el botón. Los precios se calculan solos.")
         
-        # Estructura simplificada para probar
-        df_prueba = pd.DataFrame(columns=["Rubro", "Proveedor", "Accesorio", "Stock", "Costo Base", "Flete", "% Ganancia"])
+        columnas_carga = ["Rubro", "Proveedor", "Accesorio", "Stock", "Costo Base", "Flete", "% Ganancia", "Descripcion"]
+        df_entrada = pd.DataFrame(columns=columnas_carga)
         
-        lote_final = st.data_editor(df_prueba, num_rows="dynamic", use_container_width=True, key="llave_unica_lote_v5")
+        lote_editado = st.data_editor(
+            df_entrada, 
+            num_rows="dynamic", 
+            use_container_width=True, 
+            key="editor_lote_vFINAL" 
+        )
         
-        if st.button("🚀 GUARDAR AHORA", key="boton_lote_v5"):
-            if not lote_final.empty:
-                # Aquí va la lógica de guardado que ya tenemos
-                st.write("Procesando...")
-                # (resto del código de guardado...)
+        if st.button("🚀 GUARDAR ARTÍCULOS EN STOCK", type="primary"):
+            if lote_editado is not None and not lote_editado.empty:
+                nuevos_validos = lote_editado.dropna(subset=["Accesorio"])
+                nuevos_validos = nuevos_validos[nuevos_validos["Accesorio"].astype(str).str.strip() != ""]
+                
+                if not nuevos_validos.empty:
+                    def convertir_seguro(x):
+                        try:
+                            if pd.isna(x) or x == "": return 0.0
+                            return float(str(x).replace('$', '').replace('.', '').replace(',', '.').strip())
+                        except: return 0.0
+
+                    lista_final = []
+                    for _, fila in nuevos_validos.iterrows():
+                        cb = convertir_seguro(fila["Costo Base"])
+                        fl = convertir_seguro(fila["Flete"])
+                        ga = convertir_seguro(fila["% Ganancia"])
+                        l1 = round((cb + fl) * (1 + (ga / 100)), 2)
+                        l2 = round(l1 * 0.90, 2)
+                        
+                        lista_final.append({
+                            "Rubro": str(fila["Rubro"]),
+                            "Proveedor": str(fila["Proveedor"]),
+                            "Accesorio": str(fila["Accesorio"]),
+                            "Stock": convertir_seguro(fila["Stock"]),
+                            "Costo Base": cb,
+                            "Flete": fl,
+                            "% Ganancia": ga,
+                            "Lista 1 (Cheques)": l1,
+                            "Lista 2 (Efectivo)": l2,
+                            "Descripcion": str(fila["Descripcion"])
+                        })
+                    
+                    df_nuevos_proc = pd.DataFrame(lista_final)
+                    df_stock_upd = pd.concat([df_stock, df_nuevos_proc], ignore_index=True)
+                    df_stock_upd.to_csv(ARCHIVO_ARTICULOS, index=False)
+                    st.success(f"✅ ¡Se agregaron {len(lista_final)} productos!")
+                    st.rerun()
 
     with tabs[2]: # MAESTRO (CON CÁLCULO CORREGIDO)
         st.header("⚙️ Maestro de Artículos")
