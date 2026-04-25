@@ -210,44 +210,53 @@ else:
             st.success("Base actualizada con nuevos cálculos"); st.rerun()
 
     with tabs[3]: # CTA CTE
-        st.header("👥 Gestión de Cuentas Corrientes")
-        if not df_clientes.empty:
-            cli_sel = st.selectbox("🔍 Seleccionar Cliente:", df_clientes["Nombre"].tolist(), key="busqueda_global_cli")
-            idx_c = df_clientes[df_clientes["Nombre"] == cli_sel].index[0]
-            c_info1, c_info2, c_info3 = st.columns(3)
-            c_info1.metric("Saldo Pendiente", formatear_moneda(df_clientes.at[idx_c, "Saldo"]))
-            c_info2.write(f"📞 {df_clientes.at[idx_c, 'Tel']} | 📍 {df_clientes.at[idx_c, 'Localidad']}")
-            c_info3.write(f"🏠 {df_clientes.at[idx_c, 'Direccion']}")
-            st.divider()
-            col_movs, col_ops = st.columns([2, 1])
-            with col_movs:
-                st.subheader("Historial")
-                hist = df_movs[df_movs["Cliente"] == cli_sel].sort_index(ascending=False)
-                for i, row in hist.iterrows():
-                    color = "🔴" if row["Tipo"] == "VENTA" else "🟢" if row["Tipo"] == "PAGO" else "🔵"
-                    with st.expander(f"{color} {row['Fecha']} | {row['Tipo']} | {formatear_moneda(row['Monto'])}"):
-                        st.write(f"**Detalle:** {row['Detalle']}")
-                        if row["Tipo"] in ["VENTA", "N. CRÉDITO"]:
-                            items_raw = str(row["Detalle"]).split(", ")
-                            temp_carrito = []
-                            for it in items_raw:
-                                match = re.search(r"(\d+)x (.*) \(á \$ (.*)\)", it.replace(".", "").replace(",", "."))
-                                if match:
-                                    cant, prod, pu = match.groups()
-                                    temp_carrito.append({"Producto": prod, "Cant": int(cant), "Precio U.": float(pu), "Subtotal": int(cant)*float(pu)})
-                            if temp_carrito:
-                                pdf_re = generar_pdf_binario(cli_sel, temp_carrito, row["Monto"], df_clientes, row["Tipo"])
-                                if pdf_re: st.download_button(f"🖨️ BAJAR PDF", pdf_re, f"Rei_{i}.pdf", "application/pdf", key=f"re_{i}")
-            with col_ops:
-                st.subheader("Registrar Pago")
-                monto_p = st.number_input("Monto $:", min_value=0.0, step=0.01)
-                if st.button("Confirmar Pago"):
-                    if monto_p > 0:
-                        df_clientes.at[idx_c, "Saldo"] = round(df_clientes.at[idx_c, "Saldo"] - monto_p, 2)
-                        df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
-                        n_mov = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_sel, "Tipo": "PAGO", "Monto": round(monto_p, 2), "Metodo": "Efectivo", "Detalle": "Pago registrado"}])
-                        pd.concat([df_movs, n_mov]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
-                        st.success("Pago registrado"); st.rerun()
+        # ... (Mantener el código que ya tienes de selección de cliente y registro de pago) ...
+        
+        st.divider()
+        with st.expander("🛠️ ADMINISTRAR BASE DE CLIENTES (Nuevo/Editar/Borrar)"):
+            modo_cli = st.radio("Acción:", ["Nuevo Cliente", "Editar Cliente", "Borrar Cliente"], horizontal=True)
+
+            if modo_cli == "Nuevo Cliente":
+                with st.form("form_nuevo_cliente"):
+                    n_nom = st.text_input("Nombre Completo:")
+                    n_tel = st.text_input("Teléfono:")
+                    n_loc = st.text_input("Localidad:")
+                    n_dir = st.text_input("Dirección:")
+                    n_sal = st.number_input("Saldo Inicial:", value=0.0)
+                    if st.form_submit_button("Guardar Nuevo Cliente"):
+                        if n_nom:
+                            nuevo_c = pd.DataFrame([{"Nombre": n_nom, "Tel": n_tel, "Localidad": n_loc, "Direccion": n_dir, "Saldo": n_sal}])
+                            df_clientes = pd.concat([df_clientes, nuevo_c], ignore_index=True)
+                            df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
+                            st.success("Cliente guardado correctamente"); st.rerun()
+                        else: st.error("El nombre es obligatorio")
+
+            elif modo_cli == "Editar Cliente":
+                if not df_clientes.empty:
+                    c_edit = st.selectbox("Seleccionar para editar:", df_clientes["Nombre"].tolist())
+                    idx_e = df_clientes[df_clientes["Nombre"] == c_edit].index[0]
+                    with st.form("form_edit_cliente"):
+                        e_nom = st.text_input("Nombre:", value=df_clientes.at[idx_e, "Nombre"])
+                        e_tel = st.text_input("Tel:", value=df_clientes.at[idx_e, "Tel"])
+                        e_loc = st.text_input("Localidad:", value=df_clientes.at[idx_e, "Localidad"])
+                        e_dir = st.text_input("Dirección:", value=df_clientes.at[idx_e, "Direccion"])
+                        e_sal = st.number_input("Saldo:", value=float(df_clientes.at[idx_e, "Saldo"]))
+                        if st.form_submit_button("Actualizar Datos"):
+                            df_clientes.at[idx_e, "Nombre"] = e_nom
+                            df_clientes.at[idx_e, "Tel"] = e_tel
+                            df_clientes.at[idx_e, "Localidad"] = e_loc
+                            df_clientes.at[idx_e, "Direccion"] = e_dir
+                            df_clientes.at[idx_e, "Saldo"] = e_sal
+                            df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
+                            st.success("Datos actualizados"); st.rerun()
+
+            elif modo_cli == "Borrar Cliente":
+                c_borrar = st.selectbox("Seleccionar para ELIMINAR:", df_clientes["Nombre"].tolist())
+                st.error(f"⚠️ ¿Estás seguro de eliminar a {c_borrar}? Esta acción no se puede deshacer.")
+                if st.button("SÍ, ELIMINAR DEFINITIVAMENTE"):
+                    df_clientes = df_clientes[df_clientes["Nombre"] != c_borrar]
+                    df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
+                    st.success(f"Cliente {c_borrar} eliminado"); st.rerun()
 
     with tabs[4]: # PRESUPUESTADOR (AQUÍ SE CORRIGIÓ NOTA DE CRÉDITO)
         st.header("📄 Generador de Presupuestos")
