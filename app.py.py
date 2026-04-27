@@ -214,8 +214,7 @@ else:
                     st.rerun()
                     
                 if col_acc2.button("🚀 CONFIRMAR E INGRESAR", type="primary", use_container_width=True):
-                    detalle_hist = []
-                    inv_total = 0
+                    detalle_hist = []; inv_total = 0
                     for _, r in lote_final_edit.iterrows():
                         n, stk, cb, fl, ga = r["Accesorio"], r["Stock"], r["Costo Base"], r["Flete"], r["% Ganancia"]
                         l1 = round((cb + fl) * (1 + ga/100), 2)
@@ -236,14 +235,6 @@ else:
                     st.success("✅ Stock e Historial actualizados.")
                     st.rerun()
 
-        with tab_hist_ingresos:
-            df_v_h = cargar_datos(ARCHIVO_REGISTRO_LOTES, COLS_REGISTRO_LOTES)
-            if not df_v_h.empty:
-                for idx, row in df_v_h.sort_index(ascending=False).iterrows():
-                    with st.expander(f"📦 {row['Fecha']} | Inversión: {formatear_moneda(row['Costo Total Compra'])}"):
-                        for it in str(row["Articulos"]).split(" | "): 
-                            st.write(f"🔹 {it}")
-
     with tabs[2]: # MAESTRO
         st.header("⚙️ Maestro de Artículos")
         df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True, key="ed_maestro_full")
@@ -251,8 +242,7 @@ else:
             df_ed["Lista 1 (Cheques)"] = ((df_ed["Costo Base"] + df_ed["Flete"]) * (1 + df_ed["% Ganancia"] / 100)).round(2)
             df_ed["Lista 2 (Efectivo)"] = (df_ed["Lista 1 (Cheques)"] * 0.90).round(2)
             df_ed.to_csv(ARCHIVO_ARTICULOS, index=False)
-            st.success("✅ Base actualizada")
-            st.rerun()
+            st.success("✅ Base actualizada"); st.rerun()
         
         with st.expander("🗑️ ZONA DE PELIGRO - ELIMINAR"):
             art_borrar = st.selectbox("Seleccionar para borrar:", [""] + df_stock["Accesorio"].tolist(), key="del_item_sel")
@@ -260,48 +250,35 @@ else:
                 st.error(f"¿Estás seguro de borrar {art_borrar}?")
                 if st.button("SÍ, ELIMINAR DEFINITIVAMENTE"):
                     df_stock = df_stock[df_stock["Accesorio"] != art_borrar]
-                    df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
-                    st.rerun()
+                    df_stock.to_csv(ARCHIVO_ARTICULOS, index=False); st.rerun()
 
-   with tabs[3]: # CTA CTE
+    with tabs[3]: # CTA CTE
         st.header("👥 Gestión de Cuentas Corrientes")
         if not df_clientes.empty:
             cli_sel = st.selectbox("🔍 Seleccionar Cliente:", df_clientes["Nombre"].tolist(), key="busqueda_global_cli")
             idx_c = df_clientes[df_clientes["Nombre"] == cli_sel].index[0]
-            c_info1, c_info2, c_info3 = st.columns(3)
-            c_info1.metric("Saldo Pendiente", formatear_moneda(df_clientes.at[idx_c, "Saldo"]))
-            c_info2.write(f"📞 {df_clientes.at[idx_c, 'Tel']} | 📍 {df_clientes.at[idx_c, 'Localidad']}")
-            c_info3.write(f"🏠 {df_clientes.at[idx_c, 'Direccion']}")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Saldo", formatear_moneda(df_clientes.at[idx_c, "Saldo"]))
+            c2.write(f"📞 {df_clientes.at[idx_c, 'Tel']} | 📍 {df_clientes.at[idx_c, 'Localidad']}")
+            c3.write(f"🏠 {df_clientes.at[idx_c, 'Direccion']}")
             st.divider()
-            col_movs, col_ops = st.columns([2, 1])
-            with col_movs:
+            
+            col_m, col_o = st.columns([2, 1])
+            with col_m:
                 st.subheader("Historial")
                 hist = df_movs[df_movs["Cliente"] == cli_sel].sort_index(ascending=False)
                 for i, row in hist.iterrows():
                     color = "🔴" if row["Tipo"] == "VENTA" else "🟢" if row["Tipo"] == "PAGO" else "🔵"
                     with st.expander(f"{color} {row['Fecha']} | {row['Tipo']} | {formatear_moneda(row['Monto'])}"):
                         st.write(f"**Detalle:** {row['Detalle']}")
-                        if row["Tipo"] in ["VENTA", "N. CRÉDITO"]:
-                            items_raw = str(row["Detalle"]).split(", ")
-                            temp_carrito = []
-                            for it in items_raw:
-                                match = re.search(r"(\d+)x (.*) \(á \$ (.*)\)", it.replace(".", "").replace(",", "."))
-                                if match:
-                                    cant, prod, pu = match.groups()
-                                    temp_carrito.append({"Producto": prod, "Cant": int(cant), "Precio U.": float(pu), "Subtotal": int(cant)*float(pu)})
-                            if temp_carrito:
-                                pdf_re = generar_pdf_binario(cli_sel, temp_carrito, row["Monto"], df_clientes, row["Tipo"])
-                                if pdf_re: st.download_button(f"🖨️ BAJAR PDF", pdf_re, f"Rei_{i}.pdf", "application/pdf", key=f"re_{i}")
-            with col_ops:
+            with col_o:
                 st.subheader("Registrar Pago")
-                monto_p = st.number_input("Monto $:", min_value=0.0, step=0.01)
+                m_p = st.number_input("Monto $:", min_value=0.0, key="pago_m_i")
                 if st.button("Confirmar Pago"):
-                    if monto_p > 0:
-                        df_clientes.at[idx_c, "Saldo"] = round(df_clientes.at[idx_c, "Saldo"] - monto_p, 2)
-                        df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
-                        n_mov = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_sel, "Tipo": "PAGO", "Monto": round(monto_p, 2), "Metodo": "Efectivo", "Detalle": "Pago registrado"}])
-                        pd.concat([df_movs, n_mov]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
-                        st.success("Pago registrado"); st.rerun()
+                    df_clientes.at[idx_c, "Saldo"] = round(df_clientes.at[idx_c, "Saldo"] - m_p, 2)
+                    df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
+                    n_m = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_sel, "Tipo": "PAGO", "Monto": m_p, "Metodo": "Efectivo", "Detalle": "Pago registrado"}])
+                    pd.concat([df_movs, n_m], ignore_index=True).to_csv(ARCHIVO_MOVIMIENTOS, index=False); st.rerun()
 
     with tabs[4]: # PRESUPUESTADOR (AQUÍ SE CORRIGIÓ NOTA DE CRÉDITO)
         st.header("📄 Generador de Presupuestos")
