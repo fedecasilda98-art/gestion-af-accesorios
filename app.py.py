@@ -368,37 +368,54 @@ else:
                     mime="text/plain",
                     use_container_width=True
                 )
-    with tabs[5]: # ÓRDENES
-        st.header("📋 Gestión de Órdenes y Notas de Crédito")
+    with tabs[5]: # HISTORIAL DE DOCUMENTOS (Órdenes/Notas de Crédito/Pagos)
+        st.header("📜 Historial de Operaciones")
         
-        # 1. Iniciamos el estado para la descarga si no existe
-        if "pdf_listo" not in st.session_state:
-            st.session_state.pdf_listo = None
+        # Cargamos los movimientos de la base de datos
+        df_mov_hist = cargar_datos(ARCHIVO_MOVIMIENTOS, COLS_MOVIMIENTOS)
+        
+        if not df_mov_hist.empty:
+            # Buscador por cliente para filtrar el historial
+            filtro_cli = st.selectbox("Filtrar historial por Cliente:", ["TODOS"] + df_clientes["Nombre"].tolist(), key="filt_hist_p5")
+            
+            df_mostrar = df_mov_hist.copy()
+            if filtro_cli != "TODOS":
+                df_mostrar = df_mostrar[df_mostrar["Cliente"] == filtro_cli]
 
-        with st.container(border=True):
-            cli_orden = st.selectbox("Cliente:", df_clientes["Nombre"].tolist(), key="cli_ord")
-            tipo_doc = st.radio("Tipo:", ["ORDEN DE COMPRA", "NOTA DE CRÉDITO"], horizontal=True)
-            det_orden = st.text_area("Detalle de la operación:")
-            monto_orden = st.number_input("Monto Total $:", min_value=0.0)
+            # Ordenamos por fecha (más reciente arriba)
+            df_mostrar = df_mostrar.sort_index(ascending=False)
 
-            if st.button("🚀 CONFIRMAR Y GENERAR"):
-                # Simulación de generación de archivo (Buffer)
-                import io
-                buf = io.BytesIO()
-                texto_comprobante = f"{tipo_doc}\nCliente: {cli_orden}\nFecha: {datetime.now()}\nDetalle: {det_orden}\nTotal: ${monto_orden}"
-                buf.write(texto_comprobante.encode())
-                st.session_state.pdf_listo = buf.getvalue()
-                st.success("✅ Registrado. Ahora podés descargar el comprobante abajo.")
-
-        # 2. El botón de descarga APARECE solo si se generó algo
-        if st.session_state.pdf_listo:
-            st.download_button(
-                label="📥 DESCARGAR COMPROBANTE",
-                data=st.session_state.pdf_listo,
-                file_name=f"Comprobante_{datetime.now().strftime('%d%m%y_%H%M')}.txt",
-                mime="text/plain",
-                use_container_width=True
-            )
+            for idx, row in df_mostrar.iterrows():
+                # Elegimos un ícono según el tipo de operación
+                icon = "📋" if "VENTA" in row["Tipo"] else "🔄" if "NOTA" in row["Tipo"] else "💰"
+                
+                with st.expander(f"{icon} {row['Fecha']} | {row['Cliente']} | {row['Tipo']} | {formatear_moneda(row['Monto'])}"):
+                    st.write(f"**Detalle:** {row['Detalle']}")
+                    st.write(f"**Método/Estado:** {row['Metodo']}")
+                    
+                    # Lógica de descarga para cada ítem del historial
+                    import io
+                    buf_h = io.BytesIO()
+                    txt_h = f"COMPROBANTE DE {row['Tipo']}\n"
+                    txt_h += "="*30 + "\n"
+                    txt_h += f"Fecha: {row['Fecha']}\n"
+                    txt_h += f"Cliente: {row['Cliente']}\n"
+                    txt_h += f"Monto: ${row['Monto']}\n"
+                    txt_h += f"Detalle: {row['Detalle']}\n"
+                    txt_h += "="*30 + "\n"
+                    
+                    buf_h.write(txt_h.encode())
+                    
+                    st.download_button(
+                        label=f"📥 Descargar PDF {row['Tipo']}",
+                        data=buf_h.getvalue(),
+                        file_name=f"Comprobante_{row['Cliente']}_{idx}.txt",
+                        mime="text/plain",
+                        key=f"dl_{idx}",
+                        use_container_width=True
+                    )
+        else:
+            st.info("Aún no hay movimientos registrados en el historial.")
 
     with tabs[6]: # CIERRE
         st.header("🏁 Cierre de Caja")
