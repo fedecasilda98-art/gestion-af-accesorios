@@ -128,10 +128,9 @@ with tabs[0]: # STOCK
         c3.metric("Total Lista 2", formatear_moneda((df_stock['Lista 2 (Efectivo)'] * df_stock['Stock']).sum()))
     st.dataframe(df_stock, use_container_width=True, hide_index=True)
 
-with tabs[1]: # 🚚 LOTE (REDISEÑADO)
+with tabs[1]: # 🚚 LOTE
     st.header("🚚 Gestión de Inventario (Lote)")
     
-    # Sub-pestañas internas para organizar la carga
     sub_tab_existente, sub_tab_nuevo = st.tabs(["🔄 Reponer Existente", "🆕 Cargar Producto Nuevo"])
     
     with sub_tab_existente:
@@ -139,24 +138,19 @@ with tabs[1]: # 🚚 LOTE (REDISEÑADO)
         with st.container(border=True):
             col1, col2, col3 = st.columns([3, 1, 1])
             with col1:
-                # Buscador de productos existentes
                 prod_repo = st.selectbox("Seleccionar Producto para reponer:", 
                                        df_stock["Accesorio"].tolist(), 
                                        key="repo_prod_select")
             with col2:
                 cant_repo = st.number_input("Cantidad que ingresa:", min_value=1, value=1, key="repo_cant")
             with col3:
-                # Opción para actualizar el costo base si cambió
                 nuevo_costo = st.number_input("Nuevo Costo Base (opcional):", min_value=0.0, value=0.0, key="repo_costo")
         
         if st.button("➕ Confirmar Ingreso de Stock", use_container_width=True):
             idx = df_stock[df_stock["Accesorio"] == prod_repo].index[0]
-            # Actualizar stock
             df_stock.at[idx, "Stock"] += cant_repo
-            # Si el costo es > 0, actualizar costos y listas
             if nuevo_costo > 0:
                 df_stock.at[idx, "Costo Base"] = nuevo_costo
-                # Recalcular listas automáticamente
                 flete = df_stock.at[idx, "Flete"]
                 ganancia = df_stock.at[idx, "% Ganancia"]
                 l1 = (nuevo_costo + flete) * (1 + ganancia / 100)
@@ -164,7 +158,7 @@ with tabs[1]: # 🚚 LOTE (REDISEÑADO)
                 df_stock.at[idx, "Lista 2 (Efectivo)"] = round(l1 * 0.90, 2)
             
             df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
-            st.success(f"Stock actualizado: {prod_repo} +{cant_repo}")
+            st.success(f"Stock actualizado: {prod_repo}")
             st.rerun()
 
     with sub_tab_nuevo:
@@ -183,16 +177,14 @@ with tabs[1]: # 🚚 LOTE (REDISEÑADO)
                 n_gan = st.number_input("% Ganancia", min_value=0.0, value=40.0)
                 n_desc = st.text_area("Descripción")
             
-            if st.form_submit_state: # Cálculo visual antes de enviar
-    l1_prev = (n_costo + n_flete) * (1 + n_gan / 100)
-    st.info(f"Precios calculados: Lista 1: {formatear_moneda(l1_prev)} | Lista 2: {formatear_moneda(l1_prev*0.9)}")
-
-            if st.form_submit_button("🚀 Dar de Alta Producto"):
-    if n_acc == "":
-        st.error("El nombre del accesorio es obligatorio.")
-    else:
-        # El cálculo se hace aquí adentro directamente
-        l1_new = (n_costo + n_flete) * (1 + n_gan / 100)
+            # Botón de envío (Corregido sin el atributo que fallaba)
+            submit_nuevo = st.form_submit_button("🚀 Dar de Alta Producto")
+            
+            if submit_nuevo:
+                if n_acc == "":
+                    st.error("El nombre del accesorio es obligatorio.")
+                else:
+                    l1_new = (n_costo + n_flete) * (1 + n_gan / 100)
                     nuevo_item = {
                         "Rubro": n_rubro,
                         "Proveedor": n_prov,
@@ -207,9 +199,8 @@ with tabs[1]: # 🚚 LOTE (REDISEÑADO)
                     }
                     df_stock = pd.concat([df_stock, pd.DataFrame([nuevo_item])], ignore_index=True)
                     df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
-                    st.success(f"Producto {n_acc} creado correctamente.")
+                    st.success(f"Producto {n_acc} creado.")
                     st.rerun()
-
 with tabs[2]: # ⚙️ MAESTRO
     st.header("⚙️ Maestro de Artículos")
     
