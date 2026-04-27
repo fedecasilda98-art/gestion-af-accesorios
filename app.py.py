@@ -399,15 +399,45 @@ else:
 
    with tabs[7]: # REMITOS
         st.header("📦 Generar Remito de Entrega")
+        
+        # 1. Estado para el archivo de remito
+        if "buffer_remito" not in st.session_state:
+            st.session_state.buffer_remito = None
+
         with st.container(border=True):
             r1, r2 = st.columns([3, 1])
-            art_r = r1.selectbox("Artículo:", df_stock["Accesorio"].tolist(), key="art_rem_final")
-            # CORRECCIÓN: Línea completa para evitar el SyntaxError de tu imagen
-            q_r = r2.number_input("Cant:", min_value=1, value=1, key="cant_rem_final")
+            with r1:
+                art_r = st.selectbox("Artículo:", df_stock["Accesorio"].tolist(), key="sel_art_remito")
+            with r2:
+                # AQUÍ ESTABA EL ERROR: La línea debe estar completa así
+                q_r = st.number_input("Cant:", min_value=1, value=1, key="cant_remito_final")
             
-            if st.button("Generar Remito"):
-                st.info("Remito generado. Preparando descarga...")
-                # Aquí podés aplicar la misma lógica del st.download_button de arriba
+            det_r = st.text_input("Observaciones (opcional):", key="obs_remito")
+
+            if st.button("🚀 GENERAR REMITO Y DESCARGAR", use_container_width=True):
+                import io
+                buf_remito = io.BytesIO()
+                # Armamos un texto simple para el remito
+                fecha_r = datetime.now().strftime('%d/%m/%Y %H:%M')
+                txt_remito = f"REMITO DE ENTREGA\nFecha: {fecha_r}\n"
+                txt_remito += "-"*30 + "\n"
+                txt_remito += f"Detalle: {q_r}x {art_r}\n"
+                if det_r: txt_remito += f"Obs: {det_r}\n"
+                txt_remito += "-"*30 + "\n\nFirma Receptor: ________________"
+                
+                buf_remito.write(txt_remito.encode())
+                st.session_state.buffer_remito = buf_remito.getvalue()
+                st.success("✅ Remito generado con éxito.")
+
+        # 2. Botón de descarga (Aparece solo si se generó el remito)
+        if st.session_state.buffer_remito:
+            st.download_button(
+                label="📥 DESCARGAR REMITO (TXT)",
+                data=st.session_state.buffer_remito,
+                file_name=f"Remito_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                mime="text/plain",
+                use_container_width=True
+            )
 
 st.divider()
 with st.expander("🚀 CARGAR BASES DE DATOS AL VOLUMEN"):
