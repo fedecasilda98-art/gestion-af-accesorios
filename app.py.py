@@ -184,14 +184,15 @@ with tabs[1]: # 🚚 LOTE (REDISEÑADO)
                 n_desc = st.text_area("Descripción")
             
             if st.form_submit_state: # Cálculo visual antes de enviar
-                l1_prev = (n_costo + n_flete) * (1 + n_gan / 100)
-                st.info(f"Precios calculados: Lista 1: {formatear_moneda(l1_prev)} | Lista 2: {formatear_moneda(l1_prev*0.9)}")
+    l1_prev = (n_costo + n_flete) * (1 + n_gan / 100)
+    st.info(f"Precios calculados: Lista 1: {formatear_moneda(l1_prev)} | Lista 2: {formatear_moneda(l1_prev*0.9)}")
 
             if st.form_submit_button("🚀 Dar de Alta Producto"):
-                if n_acc == "":
-                    st.error("El nombre del accesorio es obligatorio.")
-                else:
-                    l1_new = (n_costo + n_flete) * (1 + n_gan / 100)
+    if n_acc == "":
+        st.error("El nombre del accesorio es obligatorio.")
+    else:
+        # El cálculo se hace aquí adentro directamente
+        l1_new = (n_costo + n_flete) * (1 + n_gan / 100)
                     nuevo_item = {
                         "Rubro": n_rubro,
                         "Proveedor": n_prov,
@@ -208,6 +209,7 @@ with tabs[1]: # 🚚 LOTE (REDISEÑADO)
                     df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
                     st.success(f"Producto {n_acc} creado correctamente.")
                     st.rerun()
+
 with tabs[2]: # ⚙️ MAESTRO
     st.header("⚙️ Maestro de Artículos")
     
@@ -257,6 +259,7 @@ with tabs[2]: # ⚙️ MAESTRO
                 st.rerun()
             else:
                 st.info("Por favor, selecciona un artículo válido.")
+
 with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
     st.header("👥 Gestión de Clientes y Cuentas Corrientes")
     
