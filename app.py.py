@@ -21,6 +21,7 @@ else:
 ARCHIVO_ARTICULOS = "data/lista_articulos_interna.csv"
 ARCHIVO_CLIENTES = "data/clientes_base.csv"
 ARCHIVO_MOVIMIENTOS = "data/movimientos_clientes.csv"
+ARCHIVO_REGISTRO_LOTES = "data/registro_lotes.csv"
 CARPETA_FOTOS = "data/fotos_productos"
 WHATSAPP_NUM = "5493413512049"
 
@@ -50,10 +51,12 @@ def cargar_datos(archivo, columns):
 COLS_ARTICULOS = ["Rubro", "Proveedor", "Accesorio", "Stock", "Costo Base", "Flete", "% Ganancia", "Lista 1 (Cheques)", "Lista 2 (Efectivo)", "Descripcion"]
 COLS_CLIENTES = ["Nombre", "Tel", "Localidad", "Direccion", "Saldo"]
 COLS_MOVS = ["Fecha", "Cliente", "Tipo", "Monto", "Metodo", "Detalle"]
+COLS_REGISTRO_LOTES = ["Fecha", "Articulos", "Costo Total Compra"]
 
 df_stock = cargar_datos(ARCHIVO_ARTICULOS, COLS_ARTICULOS)
 df_clientes = cargar_datos(ARCHIVO_CLIENTES, COLS_CLIENTES)
 df_movs = cargar_datos(ARCHIVO_MOVIMIENTOS, COLS_MOVS)
+df_lotes_historial = cargar_datos(ARCHIVO_REGISTRO_LOTES, COLS_REGISTRO_LOTES)
 
 # Inicializar estados de sesión
 if "carrito" not in st.session_state: st.session_state.carrito = []
@@ -237,6 +240,7 @@ else:
                             st.write(f"• {it}")
             else:
                 st.info("No hay registros de ingresos todavía.")
+
     with tabs[2]: # MAESTRO
         st.header("⚙️ Maestro de Artículos")
         st.info("💡 Editá Costo, Flete o % Ganancia. Lista 1 se calcula sobre costo y Lista 2 es un 10% más barata.")
