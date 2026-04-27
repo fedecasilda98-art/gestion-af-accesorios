@@ -246,12 +246,26 @@ else:
         
         with st.expander("🗑️ ZONA DE PELIGRO - ELIMINAR"):
             art_borrar = st.selectbox("Seleccionar para borrar:", [""] + df_stock["Accesorio"].tolist(), key="del_item_sel")
+            
             if art_borrar != "":
-                st.error(f"¿Estás seguro de borrar {art_borrar}?")
-                if st.button("SÍ, ELIMINAR DEFINITIVAMENTE"):
+                st.error(f"¿Estás seguro de borrar **{art_borrar}**?")
+                
+                # Usamos una columna para centrar el botón o darle aire
+                c_del, _ = st.columns([1, 2])
+                
+                # El truco es que el botón ejecute la lógica y luego fuerce el rerun
+                if c_del.button("⚠️ CONFIRMAR ELIMINACIÓN", type="primary", use_container_width=True):
+                    # 1. Filtrar el DataFrame
                     df_stock = df_stock[df_stock["Accesorio"] != art_borrar]
-                    df_stock.to_csv(ARCHIVO_ARTICULOS, index=False); st.rerun()
-
+                    
+                    # 2. Guardar el archivo inmediatamente
+                    df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
+                    
+                    # 3. Mostrar mensaje de éxito y limpiar el estado
+                    st.success(f"🔥 '{art_borrar}' eliminado correctamente.")
+                    
+                    # 4. Esperar un instante y recargar
+                    st.rerun()
     with tabs[3]: # CTA CTE
         st.header("👥 Gestión de Cuentas Corrientes")
         if not df_clientes.empty:
