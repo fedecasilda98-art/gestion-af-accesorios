@@ -128,18 +128,86 @@ with tabs[0]: # STOCK
         c3.metric("Total Lista 2", formatear_moneda((df_stock['Lista 2 (Efectivo)'] * df_stock['Stock']).sum()))
     st.dataframe(df_stock, use_container_width=True, hide_index=True)
 
-with tabs[1]: # LOTE
-    st.header("🚚 Carga por Lote")
-    lote_editado = st.data_editor(pd.DataFrame(columns=COLS_ARTICULOS[:-2]), num_rows="dynamic", use_container_width=True, key="ed_lote_final")
-    if st.button("🚀 PROCESAR E INCORPORAR"):
-        if lote_editado is not None and not lote_editado.empty:
-            validos = lote_editado[lote_editado["Accesorio"].astype(str).str.strip() != ""].copy()
-            validos["Lista 1 (Cheques)"] = (validos["Costo Base"] + validos["Flete"]) * (1 + validos["% Ganancia"] / 100)
-            validos["Lista 2 (Efectivo)"] = validos["Lista 1 (Cheques)"] * 0.90
-            df_final = pd.concat([df_stock, validos], ignore_index=True)
-            df_final.to_csv(ARCHIVO_ARTICULOS, index=False)
-            st.success("Artículos agregados"); st.rerun()
+with tabs[1]: # 🚚 LOTE (REDISEÑADO)
+    st.header("🚚 Gestión de Inventario (Lote)")
+    
+    # Sub-pestañas internas para organizar la carga
+    sub_tab_existente, sub_tab_nuevo = st.tabs(["🔄 Reponer Existente", "🆕 Cargar Producto Nuevo"])
+    
+    with sub_tab_existente:
+        st.subheader("Reposición de Stock")
+        with st.container(border=True):
+            col1, col2, col3 = st.columns([3, 1, 1])
+            with col1:
+                # Buscador de productos existentes
+                prod_repo = st.selectbox("Seleccionar Producto para reponer:", 
+                                       df_stock["Accesorio"].tolist(), 
+                                       key="repo_prod_select")
+            with col2:
+                cant_repo = st.number_input("Cantidad que ingresa:", min_value=1, value=1, key="repo_cant")
+            with col3:
+                # Opción para actualizar el costo base si cambió
+                nuevo_costo = st.number_input("Nuevo Costo Base (opcional):", min_value=0.0, value=0.0, key="repo_costo")
+        
+        if st.button("➕ Confirmar Ingreso de Stock", use_container_width=True):
+            idx = df_stock[df_stock["Accesorio"] == prod_repo].index[0]
+            # Actualizar stock
+            df_stock.at[idx, "Stock"] += cant_repo
+            # Si el costo es > 0, actualizar costos y listas
+            if nuevo_costo > 0:
+                df_stock.at[idx, "Costo Base"] = nuevo_costo
+                # Recalcular listas automáticamente
+                flete = df_stock.at[idx, "Flete"]
+                ganancia = df_stock.at[idx, "% Ganancia"]
+                l1 = (nuevo_costo + flete) * (1 + ganancia / 100)
+                df_stock.at[idx, "Lista 1 (Cheques)"] = round(l1, 2)
+                df_stock.at[idx, "Lista 2 (Efectivo)"] = round(l1 * 0.90, 2)
+            
+            df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
+            st.success(f"Stock actualizado: {prod_repo} +{cant_repo}")
+            st.rerun()
 
+    with sub_tab_nuevo:
+        st.subheader("Alta de Nuevo Producto")
+        with st.form("form_nuevo_producto", clear_on_submit=True):
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                n_rubro = st.text_input("Rubro")
+                n_prov = st.text_input("Proveedor")
+                n_acc = st.text_input("Nombre del Accesorio")
+            with c2:
+                n_stock = st.number_input("Stock Inicial", min_value=0, value=0)
+                n_costo = st.number_input("Costo Base $", min_value=0.0, format="%.2f")
+                n_flete = st.number_input("Flete $", min_value=0.0, format="%.2f")
+            with c3:
+                n_gan = st.number_input("% Ganancia", min_value=0.0, value=40.0)
+                n_desc = st.text_area("Descripción")
+            
+            if st.form_submit_state: # Cálculo visual antes de enviar
+                l1_prev = (n_costo + n_flete) * (1 + n_gan / 100)
+                st.info(f"Precios calculados: Lista 1: {formatear_moneda(l1_prev)} | Lista 2: {formatear_moneda(l1_prev*0.9)}")
+
+            if st.form_submit_button("🚀 Dar de Alta Producto"):
+                if n_acc == "":
+                    st.error("El nombre del accesorio es obligatorio.")
+                else:
+                    l1_new = (n_costo + n_flete) * (1 + n_gan / 100)
+                    nuevo_item = {
+                        "Rubro": n_rubro,
+                        "Proveedor": n_prov,
+                        "Accesorio": n_acc,
+                        "Stock": n_stock,
+                        "Costo Base": n_costo,
+                        "Flete": n_flete,
+                        "% Ganancia": n_gan,
+                        "Lista 1 (Cheques)": round(l1_new, 2),
+                        "Lista 2 (Efectivo)": round(l1_new * 0.90, 2),
+                        "Descripcion": n_desc
+                    }
+                    df_stock = pd.concat([df_stock, pd.DataFrame([nuevo_item])], ignore_index=True)
+                    df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
+                    st.success(f"Producto {n_acc} creado correctamente.")
+                    st.rerun()
 with tabs[2]: # MAESTRO
     st.header("⚙️ Maestro")
     df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True, key="ed_maestro_definitivo")
