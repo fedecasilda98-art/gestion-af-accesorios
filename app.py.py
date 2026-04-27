@@ -9,7 +9,7 @@ from io import BytesIO
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Gestión AF Accesorios", layout="wide", initial_sidebar_state="collapsed")
 
-# Directorios y Archivos
+# --- DIRECTORIOS Y ARCHIVOS ---
 if not os.path.exists("data"):
     os.makedirs("data")
 
@@ -31,6 +31,9 @@ def cargar_datos(archivo, columns):
             for col in columns:
                 if col not in df.columns: 
                     df[col] = 0.0 if any(x in col for x in ["Saldo", "Monto", "Lista", "Costo"]) else ""
+            for col in df.columns:
+                if any(x in col for x in ["Saldo", "Monto", "Lista", "Costo", "Flete", "Stock"]):
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).round(2)
             return df[columns]
         except: 
             return pd.DataFrame(columns=columns)
@@ -44,7 +47,7 @@ df_stock = cargar_datos(ARCHIVO_ARTICULOS, COLS_ARTICULOS)
 df_clientes = cargar_datos(ARCHIVO_CLIENTES, COLS_CLIENTES)
 df_movs = cargar_datos(ARCHIVO_MOVIMIENTOS, COLS_MOVS)
 
-# Inicializar estados de sesión
+# --- ESTADOS DE SESIÓN ---
 if "carrito" not in st.session_state: st.session_state.carrito = []
 if "remito_items" not in st.session_state: st.session_state.remito_items = []
 if "confirmar_orden" not in st.session_state: st.session_state.confirmar_orden = False
@@ -73,7 +76,6 @@ def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRE
         tel = str(info_cli["Tel"].values[0]) if not info_cli.empty else "-"
         loc = str(info_cli["Localidad"].values[0]) if not info_cli.empty else "-"
         dir = str(info_cli["Direccion"].values[0]) if not info_cli.empty else "-"
-        
         fecha_display = fecha_fija if fecha_fija else datetime.now().strftime('%d/%m/%Y %H:%M')
 
         pdf.set_fill_color(240, 240, 240)
@@ -87,11 +89,11 @@ def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRE
         pdf.set_font("Helvetica", "", 10)
         pdf.cell(95, 7, f" TEL: {tel}", border="L")
         pdf.cell(95, 7, f" LOCALIDAD: {loc}", border="R", ln=True)
-        pdf.cell(190, 7, f" DIRECCIÓN: {dir}", border="LRB", ln=True)
+        pdf.cell(190, 7, f" DIRECCION: {dir}", border="LRB", ln=True)
         pdf.ln(5)
         
         pdf.set_font("Helvetica", "B", 10); pdf.set_fill_color(200, 200, 200)
-        pdf.cell(100, 10, " Articulo / Accesorio", border=1, fill=True)
+        pdf.cell(100, 10, " Articulo", border=1, fill=True)
         pdf.cell(20, 10, "Cant.", border=1, fill=True, align="C")
         pdf.cell(35, 10, "P. Unit", border=1, fill=True, align="R")
         pdf.cell(35, 10, "Subtotal", border=1, fill=True, align="R", ln=True)
@@ -108,135 +110,117 @@ def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRE
         pdf.cell(35, 10, f"{formatear_moneda(total)}", border=1, align="R")
         
         res = pdf.output(dest='S')
-        if isinstance(res, str):
-            return res.encode('latin-1', 'replace')
+        if isinstance(res, str): return res.encode('latin-1', 'replace')
         return bytes(res)
     except Exception as e:
         st.error(f"Error PDF: {str(e)}")
         return b""
 
-# --- INTERFAZ ---
+# --- INTERFAZ PRINCIPAL ---
 tabs = st.tabs(["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre", "📦 Remitos"])
 
 with tabs[0]: # STOCK
     st.header("Inventario Actual")
+    if not df_stock.empty:
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Costo Stock", formatear_moneda((df_stock['Costo Base'] * df_stock['Stock']).sum()))
+        c2.metric("Total Lista 1", formatear_moneda((df_stock['Lista 1 (Cheques)'] * df_stock['Stock']).sum()))
+        c3.metric("Total Lista 2", formatear_moneda((df_stock['Lista 2 (Efectivo)'] * df_stock['Stock']).sum()))
     st.dataframe(df_stock, use_container_width=True, hide_index=True)
 
 with tabs[1]: # LOTE
-        st.header("🚚 Carga por Lote")
-        st.info("Escribí los artículos nuevos abajo. Las Listas 1 y 2 se calculan solas.")
-        columnas_lote = ["Rubro", "Proveedor", "Accesorio", "Stock", "Costo Base", "Flete", "% Ganancia", "Descripcion"]
-        df_lote_nuevo = pd.DataFrame(columns=columnas_lote)
-        lote_editado = st.data_editor(df_lote_nuevo, num_rows="dynamic", use_container_width=True, key="lote_v_final_sincro")
-        if st.button("🚀 PROCESAR E INCORPORAR AL STOCK", type="primary"):
-            if lote_editado is not None and not lote_editado.empty:
-                validos = lote_editado[lote_editado["Accesorio"].astype(str).str.strip() != ""].copy()
-                if not validos.empty:
-                    def limpiar_n(v):
-                        try: return float(str(v).replace('$', '').replace(',', '.').strip())
-                        except: return 0.0
-                    procesados = []
-                    for _, r in validos.iterrows():
-                        cb = limpiar_n(r["Costo Base"])
-                        fl = limpiar_n(r["Flete"])
-                        ga = limpiar_n(r["% Ganancia"])
-                        l1 = round((cb + fl) * (1 + ga/100), 2)
-                        l2 = round(l1 * 0.90, 2)
-                        procesados.append({
-                            "Rubro": str(r["Rubro"]), "Proveedor": str(r["Proveedor"]),
-                            "Accesorio": str(r["Accesorio"]), "Stock": limpiar_n(r["Stock"]),
-                            "Costo Base": cb, "Flete": fl, "% Ganancia": ga,
-                            "Lista 1 (Cheques)": l1, "Lista 2 (Efectivo)": l2,
-                            "Descripcion": str(r["Descripcion"])
-                        })
-                    df_nuevos = pd.DataFrame(procesados)
-                    df_f = pd.concat([df_stock, df_nuevos], ignore_index=True)
-                    df_f.to_csv(ARCHIVO_ARTICULOS, index=False)
-                    st.success(f"✅ Se agregaron {len(procesados)} artículos."); st.rerun()
+    st.header("🚚 Carga por Lote")
+    lote_editado = st.data_editor(pd.DataFrame(columns=COLS_ARTICULOS[:-2]), num_rows="dynamic", use_container_width=True, key="ed_lote_final")
+    if st.button("🚀 PROCESAR E INCORPORAR"):
+        if lote_editado is not None and not lote_editado.empty:
+            validos = lote_editado[lote_editado["Accesorio"].astype(str).str.strip() != ""].copy()
+            validos["Lista 1 (Cheques)"] = (validos["Costo Base"] + validos["Flete"]) * (1 + validos["% Ganancia"] / 100)
+            validos["Lista 2 (Efectivo)"] = validos["Lista 1 (Cheques)"] * 0.90
+            df_final = pd.concat([df_stock, validos], ignore_index=True)
+            df_final.to_csv(ARCHIVO_ARTICULOS, index=False)
+            st.success("Artículos agregados"); st.rerun()
 
-with tabs[2]: # MAESTRO (Ejemplo de edición)
-    st.header("⚙️ Maestro de Artículos")
-    df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True, key="editor_maestro_final")
+with tabs[2]: # MAESTRO
+    st.header("⚙️ Maestro")
+    df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True, key="ed_maestro_definitivo")
     if st.button("Guardar Cambios Maestro"):
+        df_ed["Lista 1 (Cheques)"] = ((df_ed["Costo Base"] + df_ed["Flete"]) * (1 + df_ed["% Ganancia"] / 100)).round(2)
+        df_ed["Lista 2 (Efectivo)"] = (df_ed["Lista 1 (Cheques)"] * 0.90).round(2)
         df_ed.to_csv(ARCHIVO_ARTICULOS, index=False)
-        st.success("Base actualizada"); st.rerun()
+        st.success("Precios actualizados"); st.rerun()
 
 with tabs[3]: # CTA CTE
-    st.header("Gestión de Cuentas Corrientes")
+    st.header("👥 Cuentas Corrientes")
     if not df_clientes.empty:
-        cli_sel = st.selectbox("Seleccionar Cliente:", df_clientes["Nombre"].tolist(), key="sel_cli_ctacte")
+        cli_sel = st.selectbox("Cliente:", df_clientes["Nombre"].tolist(), key="cli_ctacte_final")
         idx_c = df_clientes[df_clientes["Nombre"] == cli_sel].index[0]
-        st.metric("Saldo Pendiente", formatear_moneda(df_clientes.at[idx_c, "Saldo"]))
-        
-        monto_p = st.number_input("Monto a pagar $:", min_value=0.0, key="monto_pago_cli")
-        if st.button("Registrar Pago"):
+        st.metric("Saldo", formatear_moneda(df_clientes.at[idx_c, "Saldo"]))
+        monto_p = st.number_input("Pago $:", min_value=0.0, key="pago_val")
+        if st.button("Confirmar Pago"):
             df_clientes.at[idx_c, "Saldo"] -= monto_p
             df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
-            n_mov = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_sel, "Tipo": "PAGO", "Monto": monto_p, "Metodo": "Efectivo", "Detalle": "Pago parcial"}])
+            n_mov = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_sel, "Tipo": "PAGO", "Monto": monto_p, "Metodo": "Efectivo", "Detalle": "Pago recibido"}])
             pd.concat([df_movs, n_mov]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
-            st.success("Pago guardado"); st.rerun()
+            st.success("Pago registrado"); st.rerun()
 
 with tabs[4]: # PRESUPUESTADOR
-    st.header("📄 Presupuestador")
-    cli_p = st.selectbox("Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["C. Final"], key="cli_presu")
+    st.header("📄 Generador de Documentos")
+    cli_p = st.selectbox("Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["C. Final"], key="cli_presu_final")
     p1, p2, p3 = st.columns([2, 1, 1])
-    with p1: i_p = st.selectbox("Artículo:", df_stock["Accesorio"].tolist(), key="item_presu")
-    with p2: q_p = st.number_input("Cant:", min_value=1, key="cant_presu")
-    with p3: l_p = st.selectbox("Lista:", ["Lista 1 (Cheques)", "Lista 2 (Efectivo)"], key="lista_presu")
+    with p1: i_p = st.selectbox("Articulo:", df_stock["Accesorio"].tolist(), key="item_presu_final")
+    with p2: q_p = st.number_input("Cant:", min_value=1, value=1, key="cant_presu_final")
+    with p3: l_p = st.selectbox("Lista:", ["Lista 1 (Cheques)", "Lista 2 (Efectivo)"], key="lista_presu_final")
     
-    if st.button("➕ AGREGAR"):
+    if st.button("➕ AGREGAR AL CARRITO"):
         p_u = df_stock[df_stock["Accesorio"] == i_p][l_p].values[0]
         st.session_state.carrito.append({"Producto": i_p, "Cant": q_p, "Precio U.": p_u, "Subtotal": p_u * q_p})
         st.rerun()
 
     if st.session_state.carrito:
         st.table(st.session_state.carrito)
-        t_f = sum(item["Subtotal"] for item in st.session_state.carrito)
-        st.write(f"### TOTAL: {formatear_moneda(t_f)}")
+        total_f = sum(item["Subtotal"] for item in st.session_state.carrito)
+        st.write(f"### TOTAL: {formatear_moneda(total_f)}")
         
-        colb1, colb2, colb3 = st.columns(3)
-        with colb1:
-            pdf_out = generar_pdf_binario(cli_p, st.session_state.carrito, t_f, df_clientes)
-            st.download_button("📥 DESCARGAR PDF", pdf_out, f"Presu_{cli_p}.pdf", "application/pdf")
-        with colb2:
-            if st.button("✅ GENERAR ORDEN"):
+        b1, b2, b3, b4 = st.columns(4)
+        with b1:
+            pdf_p = generar_pdf_binario(cli_p, st.session_state.carrito, total_f, df_clientes, "PRESUPUESTO")
+            st.download_button("📥 PDF PRESUPUESTO", pdf_p, "Presupuesto.pdf", "application/pdf")
+        with b2:
+            if st.button("✅ GENERAR VENTA"):
                 for item in st.session_state.carrito:
                     df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] -= item["Cant"]
                 if cli_p != "C. Final":
-                    df_clientes.loc[df_clientes["Nombre"] == cli_p, "Saldo"] += t_f
+                    df_clientes.loc[df_clientes["Nombre"] == cli_p, "Saldo"] += total_f
                 df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
                 df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
-                n_v = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_p, "Tipo": "VENTA", "Monto": t_f, "Metodo": l_p, "Detalle": "Venta asistida"}])
+                n_v = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_p, "Tipo": "VENTA", "Monto": total_f, "Metodo": l_p, "Detalle": "Venta generada"}])
                 pd.concat([df_movs, n_v]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
-                st.session_state.carrito = []; st.success("Orden cargada"); st.rerun()
-        with colb3:
-            if st.button("🗑️ LIMPIAR"):
-                st.session_state.carrito = []; st.rerun()
+                st.session_state.carrito = []; st.success("Venta Exitosa"); st.rerun()
+        with b3:
+            if st.button("🔵 NOTA CRÉDITO"):
+                for item in st.session_state.carrito:
+                    df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] += item["Cant"]
+                if cli_p != "C. Final":
+                    df_clientes.loc[df_clientes["Nombre"] == cli_p, "Saldo"] -= total_f
+                df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
+                df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
+                n_nc = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_p, "Tipo": "N. CRÉDITO", "Monto": total_f, "Metodo": "-", "Detalle": "Devolución"}])
+                pd.concat([df_movs, n_nc]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
+                st.session_state.carrito = []; st.success("NC Aplicada"); st.rerun()
+        with b4:
+            if st.button("🗑️ LIMPIAR"): st.session_state.carrito = []; st.rerun()
 
-with tabs[5]: # HISTORIAL
+with tabs[5]: # ÓRDENES
     st.header("📋 Historial Global")
     st.dataframe(df_movs.sort_index(ascending=False), use_container_width=True)
 
-with tabs[6]: # CIERRE
-        st.header("🏁 Cierre de Caja")
-        c1, c2 = st.columns(2)
-        v_s = round((df_stock['Stock'] * df_stock['Costo Base']).sum(), 2)
-        c1.metric("Valor Stock", formatear_moneda(v_s))
-        c2.metric("Deuda Clientes", formatear_moneda(df_clientes['Saldo'].sum()))
-
 with tabs[7]: # REMITOS
-    st.header("📦 Remitos")
-    cr = st.selectbox("Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["C. Final"], key="cli_remito_final")
-    if st.button("Agregar item (Prueba)"):
-        st.session_state.remito_items.append({"Producto": "Item Remito", "Cant": 1, "Precio U.": 0, "Subtotal": 0})
+    st.header("📦 Generador de Remitos")
+    cli_r = st.selectbox("Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["C. Final"], key="cli_remito_f")
+    if st.button("Añadir Item de Prueba al Remito"):
+        st.session_state.remito_items.append({"Producto": "Accesorio Remito", "Cant": 1, "Precio U.": 0, "Subtotal": 0})
     if st.session_state.remito_items:
-        pdf_rem = generar_pdf_binario(cr, st.session_state.remito_items, 0, df_clientes, "REMITO")
-        st.download_button("Descargar Remito", pdf_rem, "remito.pdf")
-
-st.divider()
-with st.expander("🚀 CARGAR BASES DE DATOS AL VOLUMEN"):
-    archivo_subido = st.file_uploader("Elegir archivo CSV", type="csv")
-    destino = st.selectbox("¿Qué archivo estás subiendo?", [ARCHIVO_ARTICULOS, ARCHIVO_CLIENTES, ARCHIVO_MOVIMIENTOS])
-    if st.button("Guardar en Railway"):
-        if archivo_subido:
-            with open(destino, "wb") as f: f.write(archivo_subido.getbuffer())
+        st.table(st.session_state.remito_items)
+        pdf_rem = generar_pdf_binario(cli_r, st.session_state.remito_items, 0, df_clientes, "REMITO")
+        st.download_button("📥 DESCARGAR REMITO", pdf_rem, "Remito.pdf", "application/pdf")
+        if st.button("Limpiar Remito"): st.session_state.remito_items = []; st.rerun()
