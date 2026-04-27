@@ -294,70 +294,80 @@ else:
                     n_m = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_sel, "Tipo": "PAGO", "Monto": m_p, "Metodo": "Efectivo", "Detalle": "Pago registrado"}])
                     pd.concat([df_movs, n_m], ignore_index=True).to_csv(ARCHIVO_MOVIMIENTOS, index=False); st.rerun()
 
-    with tabs[4]: # PRESUPUESTADOR
-        st.header("📄 Generador de Presupuestos")
+    with tabs[4]: # PRESUPUESTADOR, ÓRDENES Y NOTAS DE CRÉDITO
+        st.header("📄 Presupuestos, Órdenes y Notas de Crédito")
         
-        # Inicializamos el carrito del presupuesto si no existe
-        if "carrito_presupuesto" not in st.session_state:
-            st.session_state.carrito_presupuesto = []
+        # 1. Selección de Tipo de Documento
+        tipo_doc_p = st.radio("Seleccionar tipo de documento:", 
+                             ["PRESUPUESTO", "ORDEN DE COMPRA", "NOTA DE CRÉDITO"], 
+                             horizontal=True, key="tipo_doc_p_root")
+        
+        # Inicializamos el carrito específico si no existe
+        if "carrito_general" not in st.session_state:
+            st.session_state.carrito_general = []
+        if "buffer_doc_listo" not in st.session_state:
+            st.session_state.buffer_doc_listo = None
 
         with st.container(border=True):
-            c1, c2, c3 = st.columns([3, 1, 1])
-            with c1:
-                prod_pres = st.selectbox("Seleccionar Herraje/Accesorio:", df_stock["Accesorio"].tolist(), key="sel_p_pres")
-            with c2:
-                cant_pres = st.number_input("Cantidad:", min_value=1, value=1, key="cant_p_pres")
-            with c3:
-                # Buscamos el precio de lista 1 (o la que prefieras)
-                precio_u = df_stock[df_stock["Accesorio"] == prod_pres]["Lista 1 (Cheques)"].values[0]
-                st.write(f"Precio Unit: **{formatear_moneda(precio_u)}**")
+            col_cli, col_fec = st.columns([2, 1])
+            cli_p = col_cli.selectbox("Cliente:", df_clientes["Nombre"].tolist(), key="cli_p_p")
+            
+            st.divider()
+            
+            c1, c2 = st.columns([3, 1])
+            prod_p = c1.selectbox("Accesorio/Herraje:", df_stock["Accesorio"].tolist(), key="sel_prod_p_p")
+            q_p = c2.number_input("Cantidad:", min_value=1, value=1, key="cant_prod_p_p")
+            
+            # Buscamos precio según el tipo (por ahora Lista 1)
+            precio_u = df_stock[df_stock["Accesorio"] == prod_p]["Lista 1 (Cheques)"].values[0]
+            st.write(f"Precio Unitario: **{formatear_moneda(precio_u)}**")
 
-            if st.button("➕ AGREGAR AL PRESUPUESTO", use_container_width=True):
-                item = {
-                    "Producto": prod_pres,
-                    "Cantidad": cant_pres,
+            if st.button("➕ AGREGAR ÍTEM", use_container_width=True):
+                st.session_state.carrito_general.append({
+                    "Producto": prod_p,
+                    "Cantidad": q_p,
                     "Precio Unit": precio_u,
-                    "Subtotal": round(cant_pres * precio_u, 2)
-                }
-                st.session_state.carrito_presupuesto.append(item)
+                    "Subtotal": round(q_p * precio_u, 2)
+                })
                 st.rerun()
 
-        # Mostrar el listado actual
-        if st.session_state.carrito_presupuesto:
-            df_curr_pres = pd.DataFrame(st.session_state.carrito_presupuesto)
-            st.table(df_curr_pres)
+        # 3. Listado y Generación
+        if st.session_state.carrito_general:
+            df_p_actual = pd.DataFrame(st.session_state.carrito_general)
+            st.table(df_p_actual)
             
-            total_pres = df_curr_pres["Subtotal"].sum()
-            st.subheader(f"Total Presupuesto: {formatear_moneda(total_pres)}")
+            total_gral = df_p_actual["Subtotal"].sum()
+            st.subheader(f"Total {tipo_doc_p}: {formatear_moneda(total_gral)}")
             
-            col_p1, col_p2 = st.columns(2)
-            if col_p1.button("🗑️ REINICIAR", use_container_width=True):
-                st.session_state.carrito_presupuesto = []
+            b1, b2 = st.columns(2)
+            if b1.button("🗑️ REINICIAR", use_container_width=True):
+                st.session_state.carrito_general = []
+                st.session_state.buffer_doc_listo = None
                 st.rerun()
             
-            if col_p2.button("💾 GENERAR COMPROBANTE", type="primary", use_container_width=True):
-                # Aplicamos la lógica de descarga que querías
+            if b2.button(f"💾 GENERAR {tipo_doc_p}", type="primary", use_container_width=True):
                 import io
-                buf_p = io.BytesIO()
-                texto_p = f"PRESUPUESTO - {datetime.now().strftime('%d/%m/%Y')}\n\n"
-                for i in st.session_state.carrito_presupuesto:
-                    texto_p += f"- {i['Cantidad']}x {i['Producto']} | Unit: ${i['Precio Unit']} | Sub: ${i['Subtotal']}\n"
-                texto_p += f"\nTOTAL: {formatear_moneda(total_pres)}"
+                buf = io.BytesIO()
+                fecha_doc = datetime.now().strftime('%d/%m/%Y %H:%M')
+                txt = f"{tipo_doc_p}\nCliente: {cli_p}\nFecha: {fecha_doc}\n"
+                txt += "-"*40 + "\n"
+                for i in st.session_state.carrito_general:
+                    txt += f"{i['Cantidad']}x {i['Producto']} | ${i['Precio Unit']} | Sub: ${i['Subtotal']}\n"
+                txt += "-"*40 + f"\nTOTAL: ${total_gral}"
                 
-                buf_p.write(texto_p.encode())
-                st.session_state.pdf_p_listo = buf_p.getvalue()
-                st.success("✅ Presupuesto generado.")
+                buf.write(txt.encode())
+                st.session_state.buffer_doc_listo = buf.getvalue()
+                st.success(f"✅ {tipo_doc_p} generado correctamente.")
 
-            # Si se generó el buffer, mostramos el botón de descarga
-            if "pdf_p_listo" in st.session_state and st.session_state.pdf_p_listo:
+            # 4. Botón de descarga automática (manual por clic)
+            if st.session_state.buffer_doc_listo:
                 st.download_button(
-                    label="📥 DESCARGAR PRESUPUESTO",
-                    data=st.session_state.pdf_p_listo,
-                    file_name=f"Presupuesto_{datetime.now().strftime('%Y%m%d')}.txt",
+                    label=f"📥 DESCARGAR {tipo_doc_p}",
+                    data=st.session_state.buffer_doc_listo,
+                    file_name=f"{tipo_doc_p}_{datetime.now().strftime('%Y%m%d')}.txt",
                     mime="text/plain",
                     use_container_width=True
                 )
-
     with tabs[5]: # ÓRDENES
         st.header("📋 Gestión de Órdenes y Notas de Crédito")
         
