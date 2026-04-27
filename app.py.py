@@ -294,97 +294,69 @@ else:
                     n_m = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_sel, "Tipo": "PAGO", "Monto": m_p, "Metodo": "Efectivo", "Detalle": "Pago registrado"}])
                     pd.concat([df_movs, n_m], ignore_index=True).to_csv(ARCHIVO_MOVIMIENTOS, index=False); st.rerun()
 
-    with tabs[4]: # PRESUPUESTADOR (AQUÍ SE CORRIGIÓ NOTA DE CRÉDITO)
+    with tabs[4]: # PRESUPUESTADOR
         st.header("📄 Generador de Presupuestos")
-        cli_p = st.selectbox("Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cliente_presupuesto_unico")
-        p1, p2, p3 = st.columns([2, 1, 1])
-        with p1: i_p = st.selectbox("Artículo:", df_stock["Accesorio"].tolist(), key="item_presupuesto_unico")
-        with p2: q_p = st.number_input("Cant:", min_value=1, value=1, key="cant_presupuesto_unico")
-        with p3: l_p = st.selectbox("Lista:", ["Lista 1 (Cheques)", "Lista 2 (Efectivo)"], key="lista_presupuesto_unico")
-        if st.button("➕ AGREGAR AL CARRITO"):
-            p_u = round(df_stock[df_stock["Accesorio"] == i_p][l_p].values[0], 2)
-            st.session_state.carrito.append({"Producto": i_p, "Cant": q_p, "Precio U.": p_u, "Subtotal": round(p_u * q_p, 2)})
-            st.rerun()
-        if st.session_state.carrito:
-            st.subheader("Detalle")
-            for index, item in enumerate(st.session_state.carrito):
-                col_item, col_btn = st.columns([4, 1])
-                with col_item: st.write(f"**{item['Cant']}x** {item['Producto']} — {formatear_moneda(item['Subtotal'])}")
-                with col_btn:
-                    if st.button("❌", key=f"del_item_{index}"): st.session_state.carrito.pop(index); st.rerun()
-            t_f = round(sum(item["Subtotal"] for item in st.session_state.carrito), 2)
-            st.markdown(f"### TOTAL: {formatear_moneda(t_f)}")
-            st.divider()
-            b1, b2, b3, b4 = st.columns(4)
-            with b1:
-                pdf_pre = generar_pdf_binario(cli_p, st.session_state.carrito, t_f, df_clientes, "PRESUPUESTO")
-                if pdf_pre: st.download_button("📥 BAJAR PDF", pdf_pre, f"Pre_{cli_p}.pdf", "application/pdf", key="btn_download_pre", use_container_width=True)
-            with b2:
-                if st.button("✅ ORDEN", use_container_width=True): st.session_state.confirmar_orden = True
-            with b3:
-                if st.button("🔵 N. CRÉDITO", use_container_width=True): st.session_state.confirmar_nc = True
-            with b4:
-                if st.button("🗑️ LIMPIAR", use_container_width=True): st.session_state.carrito = []; st.rerun()
-if st.button("🚀 CONFIRMAR ORDEN"):
-    # 1. Generamos el contenido (suponiendo que es un texto o CSV por ahora)
-    buffer = io.BytesIO()
-    
-    # Supongamos que armamos un resumen de la orden
-    resumen_orden = f"Orden de: {cliente_seleccionado}\nFecha: {datetime.now()}\nDetalle: {detalle_final}"
-    
-    # Lo guardamos en el buffer (si fuera PDF o Excel, aquí iría la lógica del archivo)
-    buffer.write(resumen_orden.encode())
-    buffer.seek(0)
-    
-    # 2. Mostramos el botón de descarga que APARECE solo al confirmar
-    st.success("✅ Orden procesada con éxito.")
-    
-    st.download_button(
-        label="📥 DESCARGAR COMPROBANTE",
-        data=buffer,
-        file_name=f"Orden_{cliente_seleccionado}_{datetime.now().strftime('%Y%m%d')}.txt",
-        mime="text/plain",
-        use_container_width=True
-    )
+        
+        # Inicializamos el carrito del presupuesto si no existe
+        if "carrito_presupuesto" not in st.session_state:
+            st.session_state.carrito_presupuesto = []
 
-            # LÓGICA DE ORDEN (EXISTENTE)
-            if st.session_state.confirmar_orden:
-                st.warning(f"¿Generar ORDEN para {cli_p}?")
-                c_si, c_no = st.columns(2)
-                if c_si.button("SÍ, GENERAR"):
-                    det_prod = ", ".join([f"{item['Cant']}x {item['Producto']} (á {formatear_moneda(item['Precio U.'])})" for item in st.session_state.carrito])
-                    for item in st.session_state.carrito:
-                        df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] -= item["Cant"]
-                    df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
-                    if cli_p != "Consumidor Final":
-                        idx_cp = df_clientes[df_clientes["Nombre"] == cli_p].index[0]
-                        df_clientes.at[idx_cp, "Saldo"] = round(df_clientes.at[idx_cp, "Saldo"] + t_f, 2)
-                        df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
-                        n_mov = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_p, "Tipo": "VENTA", "Monto": t_f, "Metodo": "-", "Detalle": det_prod}])
-                        pd.concat([df_movs, n_mov]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
-                    st.session_state.carrito = []; st.session_state.confirmar_orden = False; st.success("Orden procesada"); st.rerun()
-                if c_no.button("CANCELAR"): st.session_state.confirmar_orden = False; st.rerun()
+        with st.container(border=True):
+            c1, c2, c3 = st.columns([3, 1, 1])
+            with c1:
+                prod_pres = st.selectbox("Seleccionar Herraje/Accesorio:", df_stock["Accesorio"].tolist(), key="sel_p_pres")
+            with c2:
+                cant_pres = st.number_input("Cantidad:", min_value=1, value=1, key="cant_p_pres")
+            with c3:
+                # Buscamos el precio de lista 1 (o la que prefieras)
+                precio_u = df_stock[df_stock["Accesorio"] == prod_pres]["Lista 1 (Cheques)"].values[0]
+                st.write(f"Precio Unit: **{formatear_moneda(precio_u)}**")
 
-            # --- LÓGICA DE NOTA DE CRÉDITO (CORREGIDA) ---
-            if st.session_state.confirmar_nc:
-                st.info(f"¿Emitir NOTA DE CRÉDITO para {cli_p}? Esto devolverá el stock y restará saldo.")
-                nc_si, nc_no = st.columns(2)
-                if nc_si.button("SÍ, EMITIR NC"):
-                    det_nc = ", ".join([f"{item['Cant']}x {item['Producto']} (Devolución)" for item in st.session_state.carrito])
-                    # 1. Devolver Stock
-                    for item in st.session_state.carrito:
-                        df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] += item["Cant"]
-                    df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
-                    # 2. Restar Saldo al Cliente
-                    if cli_p != "Consumidor Final":
-                        idx_cp = df_clientes[df_clientes["Nombre"] == cli_p].index[0]
-                        df_clientes.at[idx_cp, "Saldo"] = round(df_clientes.at[idx_cp, "Saldo"] - t_f, 2)
-                        df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
-                        # 3. Registrar Movimiento
-                        n_mov_nc = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_p, "Tipo": "N. CRÉDITO", "Monto": t_f, "Metodo": "-", "Detalle": det_nc}])
-                        pd.concat([df_movs, n_mov_nc]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
-                    st.session_state.carrito = []; st.session_state.confirmar_nc = False; st.success("Nota de Crédito aplicada"); st.rerun()
-                if nc_no.button("CANCELAR NC"): st.session_state.confirmar_nc = False; st.rerun()
+            if st.button("➕ AGREGAR AL PRESUPUESTO", use_container_width=True):
+                item = {
+                    "Producto": prod_pres,
+                    "Cantidad": cant_pres,
+                    "Precio Unit": precio_u,
+                    "Subtotal": round(cant_pres * precio_u, 2)
+                }
+                st.session_state.carrito_presupuesto.append(item)
+                st.rerun()
+
+        # Mostrar el listado actual
+        if st.session_state.carrito_presupuesto:
+            df_curr_pres = pd.DataFrame(st.session_state.carrito_presupuesto)
+            st.table(df_curr_pres)
+            
+            total_pres = df_curr_pres["Subtotal"].sum()
+            st.subheader(f"Total Presupuesto: {formatear_moneda(total_pres)}")
+            
+            col_p1, col_p2 = st.columns(2)
+            if col_p1.button("🗑️ REINICIAR", use_container_width=True):
+                st.session_state.carrito_presupuesto = []
+                st.rerun()
+            
+            if col_p2.button("💾 GENERAR COMPROBANTE", type="primary", use_container_width=True):
+                # Aplicamos la lógica de descarga que querías
+                import io
+                buf_p = io.BytesIO()
+                texto_p = f"PRESUPUESTO - {datetime.now().strftime('%d/%m/%Y')}\n\n"
+                for i in st.session_state.carrito_presupuesto:
+                    texto_p += f"- {i['Cantidad']}x {i['Producto']} | Unit: ${i['Precio Unit']} | Sub: ${i['Subtotal']}\n"
+                texto_p += f"\nTOTAL: {formatear_moneda(total_pres)}"
+                
+                buf_p.write(texto_p.encode())
+                st.session_state.pdf_p_listo = buf_p.getvalue()
+                st.success("✅ Presupuesto generado.")
+
+            # Si se generó el buffer, mostramos el botón de descarga
+            if "pdf_p_listo" in st.session_state and st.session_state.pdf_p_listo:
+                st.download_button(
+                    label="📥 DESCARGAR PRESUPUESTO",
+                    data=st.session_state.pdf_p_listo,
+                    file_name=f"Presupuesto_{datetime.now().strftime('%Y%m%d')}.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
 
     with tabs[5]: # ÓRDENES
         st.header("📋 Gestión de Órdenes y Notas de Crédito")
