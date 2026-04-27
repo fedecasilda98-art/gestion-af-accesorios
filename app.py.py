@@ -5,143 +5,121 @@ from datetime import datetime
 from fpdf import FPDF
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Gestión AF Accesorios", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="AF Accesorios - Sistema de Gestión", layout="wide")
 
-# --- RUTAS DE ARCHIVOS ---
-if not os.path.exists("data"):
-    os.makedirs("data")
-
+# --- RUTAS Y CARGA DE DATOS ---
+if not os.path.exists("data"): os.makedirs("data")
 ARCHIVO_ARTICULOS = "data/lista_articulos_interna.csv"
 ARCHIVO_CLIENTES = "data/clientes_base.csv"
 ARCHIVO_MOVIMIENTOS = "data/movimientos_clientes.csv"
-ARCHIVO_HISTORIAL_STOCK = "data/historial_stock.csv"
 
-# --- CARGA DE DATOS ---
 def cargar_datos(archivo, columns):
     if os.path.exists(archivo):
         try:
             df = pd.read_csv(archivo)
             df.columns = df.columns.str.strip()
-            for col in columns:
-                if col not in df.columns:
-                    df[col] = 0.0 if any(x in col for x in ["Saldo", "Monto", "Lista", "Costo", "Flete", "Stock", "%"]) else ""
             return df[columns]
-        except:
-            return pd.DataFrame(columns=columns)
+        except: return pd.DataFrame(columns=columns)
     return pd.DataFrame(columns=columns)
 
 COLS_ARTICULOS = ["Rubro", "Proveedor", "Accesorio", "Stock", "Costo Base", "Flete", "% Ganancia", "Lista 1 (Cheques)", "Lista 2 (Efectivo)", "Descripcion"]
 COLS_CLIENTES = ["Nombre", "Tel", "Localidad", "Direccion", "Saldo"]
 COLS_MOVS = ["Fecha", "Cliente", "Tipo", "Monto", "Metodo", "Detalle"]
-COLS_HISTORIAL_STOCK = ["Fecha", "Accesorio", "Cantidad", "Tipo Operacion", "Proveedor"]
 
 df_stock = cargar_datos(ARCHIVO_ARTICULOS, COLS_ARTICULOS)
 df_clientes = cargar_datos(ARCHIVO_CLIENTES, COLS_CLIENTES)
 df_movs = cargar_datos(ARCHIVO_MOVIMIENTOS, COLS_MOVS)
-df_hist_stock = cargar_datos(ARCHIVO_HISTORIAL_STOCK, COLS_HISTORIAL_STOCK)
 
 # --- ESTADOS DE SESIÓN ---
 if "carrito" not in st.session_state: st.session_state.carrito = []
 if "remito_items" not in st.session_state: st.session_state.remito_items = []
-if "confirmar_orden" not in st.session_state: st.session_state.confirmar_orden = False
-if "confirmar_nc" not in st.session_state: st.session_state.confirmar_nc = False
-if "pdf_a_descargar" not in st.session_state: st.session_state.pdf_a_descargar = None
 
 # --- UTILIDADES ---
 def formatear_moneda(valor):
-    try:
-        v = round(float(valor), 2)
-        return f"$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    try: return f"$ {float(valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except: return "$ 0,00"
 
-# --- CLASE PDF REDISEÑADA ---
 class PDF(FPDF):
     def header(self):
-        # Título principal a la izquierda
-        self.set_font("Helvetica", "B", 18)
+        # Encabezado según referencia [cite: 1, 2, 3]
+        self.set_font("Helvetica", "B", 16)
         self.cell(100, 10, "AF ACCESORIOS - ALUMINIO", 0, 0, "L")
-        self.set_font("Helvetica", "", 10)
+        self.set_font("Helvetica", "B", 11)
         self.cell(0, 10, "ACCESORIOS DE ALUMINIO", 0, 1, "R")
-        
-        self.set_font("Helvetica", "", 10)
+        self.set_font("Helvetica", "", 9)
         self.cell(0, 5, "Casilda, Santa Fe | WhatsApp: +54 9 341 351-2049", 0, 1, "L")
-        self.ln(5)
+        self.ln(3)
         self.line(10, self.get_y(), 200, self.get_y())
         self.ln(5)
 
-def generar_pdf(cliente_nombre, items, total, df_clientes, titulo="PRESUPUESTO"):
+def generar_pdf(cliente_nombre, items, total, df_clientes, tipo_doc):
     try:
         pdf = PDF()
         pdf.add_page()
         
         info_cli = df_clientes[df_clientes["Nombre"] == cliente_nombre]
-        tel = str(info_cli["Tel"].values[0]) if not info_cli.empty else "-"
-        loc = str(info_cli["Localidad"].values[0]) if not info_cli.empty else "-"
-        dir_cli = str(info_cli["Direccion"].values[0]) if not info_cli.empty else "-"
+        tel = str(info_cli["Tel"].iloc[0]) if not info_cli.empty else "-"
+        loc = str(info_cli["Localidad"].iloc[0]) if not info_cli.empty else "-"
+        dire = str(info_cli["Direccion"].iloc[0]) if not info_cli.empty else "-"
         
-        # Tipo de documento
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 10, f"TIPO DE DOCUMENTO: {titulo}", 0, 1, "L")
+        # Bloque de Información del Documento [cite: 4, 5, 6, 7, 9, 10]
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.cell(0, 8, f"TIPO DE DOCUMENTO: {tipo_doc.upper()}", 0, 1)
         pdf.ln(2)
         
-        # Info Cliente
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(30, 7, "CLIENTE:", 0, 0)
-        pdf.set_font("Helvetica", "", 10)
-        pdf.cell(70, 7, f"{cliente_nombre}", 0, 0)
+        # Datos del cliente en dos columnas
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(25, 6, "CLIENTE:", 0, 0)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.cell(75, 6, str(cliente_nombre), 0, 0)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(25, 6, "FECHA:", 0, 0)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.cell(0, 6, datetime.now().strftime('%d/%m/%Y %H:%M'), 0, 1)
         
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(30, 7, "FECHA:", 0, 0)
-        pdf.set_font("Helvetica", "", 10)
-        pdf.cell(0, 7, f"{datetime.now().strftime('%d/%m/%Y %H:%M')}", 0, 1)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(25, 6, "TEL:", 0, 0)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.cell(75, 6, tel, 0, 0)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(25, 6, "LOCALIDAD:", 0, 0)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.cell(0, 6, loc, 0, 1)
         
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(30, 7, "DIRECCIÓN:", 0, 0)
-        pdf.set_font("Helvetica", "", 10)
-        pdf.cell(70, 7, f"{dir_cli}", 0, 0)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(25, 6, "DIRECCIÓN:", 0, 0)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.cell(0, 6, dire, 0, 1)
+        pdf.ln(8)
         
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(30, 7, "LOCALIDAD:", 0, 0)
-        pdf.set_font("Helvetica", "", 10)
-        pdf.cell(0, 7, f"{loc}", 0, 1)
-
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(30, 7, "TEL:", 0, 0)
-        pdf.set_font("Helvetica", "", 10)
-        pdf.cell(0, 7, f"{tel}", 0, 1)
-        
-        pdf.ln(10)
-        
-        # Tabla de Artículos
-        pdf.set_fill_color(240, 240, 240)
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(100, 8, " Artículo / Accesorio", 1, 0, "L", True)
-        pdf.cell(20, 8, "Cant.", 1, 0, "C", True)
+        # Tabla [cite: 8]
+        pdf.set_fill_color(245, 245, 245)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(105, 8, " Artículo / Accesorio", 1, 0, "L", True)
+        pdf.cell(15, 8, "Cant.", 1, 0, "C", True)
         pdf.cell(35, 8, "P. Unit", 1, 0, "C", True)
         pdf.cell(35, 8, "Subtotal", 1, 1, "C", True)
         
-        pdf.set_font("Helvetica", "", 10)
-        for item in items:
-            prod_nom = str(item['Producto'])[:45].encode('latin-1', 'ignore').decode('latin-1')
-            pdf.cell(100, 8, f" {prod_nom}", 1)
-            pdf.cell(20, 8, str(item['Cant']), 1, 0, "C")
-            pdf.cell(35, 8, formatear_moneda(item['Precio U.']), 1, 0, "R")
-            pdf.cell(35, 8, formatear_moneda(item['Subtotal']), 1, 1, "R")
+        pdf.set_font("Helvetica", "", 9)
+        for i in items:
+            pdf.cell(105, 7, f" {str(i['Producto'])[:50]}", 1)
+            pdf.cell(15, 7, str(i['Cant']), 1, 0, "C")
+            pdf.cell(35, 7, formatear_moneda(i['Precio U.']), 1, 0, "R")
+            pdf.cell(35, 7, formatear_moneda(i['Subtotal']), 1, 1, "R")
             
-        # Total
+        # Fila de Total
         pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(120, 10, "", 0, 0)
-        pdf.cell(35, 10, "TOTAL:", 1, 0, "C", True)
-        pdf.cell(35, 10, formatear_moneda(total), 1, 1, "R")
+        pdf.cell(120, 8, "", 0, 0)
+        pdf.cell(35, 8, "TOTAL:", 1, 0, "C", True)
+        pdf.cell(35, 8, formatear_moneda(total), 1, 1, "R")
         
-        resultado = pdf.output(dest='S')
-        return bytes(resultado) if not isinstance(resultado, str) else resultado.encode('latin-1')
+        return pdf.output(dest='S')
     except Exception as e:
-        st.error(f"Error generando PDF: {e}")
+        st.error(f"Error PDF: {e}")
         return None
 
-# --- PESTAÑAS ---
-tabs = st.tabs(["📊 Stock", "🚚 Lote/Carga", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre", "📦 Remitos", "📂 Importar"])
+# --- INTERFAZ ---
+tabs = st.tabs(["📊 Stock", "🚚 Carga", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestos", "📋 Órdenes", "📦 Remitos"])
 
 # --- TAB 0: STOCK ---
 with tabs[0]:
@@ -294,16 +272,27 @@ with tabs[5]:
 
 # --- TAB 6: CIERRE ---
 with tabs[6]:
-    st.header("🏁 Cierre de Caja y Estado")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Deuda Total Clientes", formatear_moneda(df_clientes['Saldo'].sum()))
-    c2.metric("Ventas del Mes", formatear_moneda(df_movs[df_movs["Tipo"]=="VENTA"]["Monto"].sum()))
-    c3.metric("Pagos Recibidos", formatear_moneda(df_movs[df_movs["Tipo"]=="PAGO"]["Monto"].sum()))
+    st.header("📦 Generar Remito de Entrega")
+    cli_r = st.selectbox("Cliente:", df_clientes["Nombre"].tolist(), key="r_cli")
+    r1, r2 = st.columns([4, 1])
+    prod_r = r1.selectbox("Producto:", df_stock["Accesorio"].tolist(), key="r_prod")
+    cant_r = r2.number_input("Cant:", min_value=1, value=1, key="r_cant")
     
-    st.subheader("Últimos Pagos con Cheque")
-    cheques = df_movs[df_movs["Metodo"].str.contains("Cheque|eCheq", na=False)]
-    st.dataframe(cheques, use_container_width=True)
+    if st.button("Agregar al Remito"):
+        # En remitos el precio suele ir en 0 o no mostrarse, pero el PDF pide la columna
+        st.session_state.remito_items.append({"Producto": prod_r, "Cant": cant_r, "Precio U.": 0, "Subtotal": 0})
+        st.rerun()
 
+    if st.session_state.remito_items:
+        st.subheader("Vista Previa del Remito")
+        st.table(st.session_state.remito_items)
+        
+        pdf_remito = generar_pdf(cli_r, st.session_state.remito_items, 0, df_clientes, "REMITO DE ENTREGA")
+        st.download_button("📥 Descargar Remito PDF", pdf_remito, f"Remito_{cli_r}.pdf", "application/pdf")
+        
+        if st.button("Limpiar Remito", key="clear_rem"):
+            st.session_state.remito_items = []
+            st.rerun()
 with tabs[7]:
     st.header("📦 Generador de Remitos")
     cli_rem = st.selectbox("Cliente para Remito:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cli_rem_box")
