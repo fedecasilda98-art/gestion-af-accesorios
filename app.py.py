@@ -285,17 +285,45 @@ else:
             else:
                 st.info("No hay ingresos registrados.")
 
-    with tabs[2]: # MAESTRO
+   with tabs[2]: # MAESTRO
         st.header("⚙️ Maestro de Artículos")
         st.info("💡 Editá Costo, Flete o % Ganancia. Lista 1 se calcula sobre costo y Lista 2 es un 10% más barata.")
+        
+        # --- SECCIÓN DE EDICIÓN ---
         df_ed = st.data_editor(df_stock, use_container_width=True, hide_index=True, key="ed_maestro_full")
+        
         if st.button("Guardar Cambios Maestro"):
+            # Recalcular listas antes de guardar
             df_ed["Lista 1 (Cheques)"] = (df_ed["Costo Base"] + df_ed["Flete"]) * (1 + df_ed["% Ganancia"] / 100)
             df_ed["Lista 2 (Efectivo)"] = df_ed["Lista 1 (Cheques)"] * 0.90
             df_ed["Lista 1 (Cheques)"] = df_ed["Lista 1 (Cheques)"].round(2)
             df_ed["Lista 2 (Efectivo)"] = df_ed["Lista 2 (Efectivo)"].round(2)
             df_ed.to_csv(ARCHIVO_ARTICULOS, index=False)
-            st.success("Base actualizada con nuevos cálculos"); st.rerun()
+            st.success("✅ Base actualizada con nuevos cálculos"); st.rerun()
+
+        st.divider()
+
+        # --- SECCIÓN DE ELIMINACIÓN ---
+        with st.expander("🗑️ ZONA DE PELIGRO - Eliminar Artículo"):
+            st.warning("Cuidado: Eliminar un artículo es una acción permanente.")
+            
+            # Selector para elegir qué borrar
+            articulo_a_borrar = st.selectbox(
+                "Seleccionar artículo para ELIMINAR:", 
+                [""] + df_stock["Accesorio"].tolist(), 
+                key="delete_item_selector"
+            )
+            
+            if articulo_a_borrar != "":
+                st.error(f"¿Estás seguro de que querés borrar '{articulo_a_borrar}'? Esta acción no se puede deshacer.")
+                
+                # Botón de confirmación final
+                if st.button(f"SÍ, ELIMINAR {articulo_a_borrar}"):
+                    # Filtrar el DataFrame para quitar el artículo
+                    df_stock = df_stock[df_stock["Accesorio"] != articulo_a_borrar]
+                    # Guardar en el CSV
+                    df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
+                    st.success(f"🔥 '{articulo_a_borrar}' ha sido eliminado."); st.rerun()
 
     with tabs[3]: # CTA CTE
         st.header("👥 Gestión de Cuentas Corrientes")
