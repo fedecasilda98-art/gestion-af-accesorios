@@ -354,12 +354,12 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
                             st.caption(f"Método: {row['Metodo']} | Detalle: {row['Detalle']}")
                         
                         with col_btn:
-                            # Lógica de re-descarga según el tipo de movimiento
-                            if row['Tipo'] in ["VENTA", "N. CRÉDITO"]:
-                                # Simulamos los items para el PDF (puedes ajustar esto si guardas los carritos en archivos)
-                                items_fake = [{"Producto": row['Detalle'], "Cant": 1, "Precio U.": row['Monto'], "Subtotal": row['Monto']}]
-                                pdf_data = generar_pdf_binario(cli_sel, items_fake, row['Monto'], df_clientes, row['Tipo'], row['Fecha'])
-                                st.download_button("📥 PDF", pdf_data, f"{row['Tipo']}_{i}.pdf", key=f"re_down_{i}")
+            if row['Tipo'] in ["VENTA", "N. CRÉDITO"]:
+                # Creamos un item genérico con la info del historial
+                items_re = [{"Producto": row['Detalle'], "Cant": 1, "Subtotal": row['Monto']}]
+                # LLAMADA UNIFICADA
+                pdf_re = generar_pdf_binario(cli_sel, items_re, row['Monto'], df_clientes, row['Tipo'], row['Fecha'])
+                st.download_button("📥 PDF", pdf_re, f"{row['Tipo']}_{i}.pdf", key=f"re_{i}")
             else:
                 st.info("No hay movimientos registrados para este cliente.")
 
@@ -442,7 +442,7 @@ with tabs[4]: # 📄 PRESUPUESTADOR (CON OPCIÓN DE IMPRESIÓN)
                 st.rerun()
 
         with b2:
-            # Opción 2: Venta (Resta stock y suma saldo)
+            # Botón de Venta
             if st.button("✅ GENERAR VENTA", use_container_width=True):
                 for item in st.session_state.carrito:
                     df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] -= item["Cant"]
@@ -465,12 +465,12 @@ with tabs[4]: # 📄 PRESUPUESTADOR (CON OPCIÓN DE IMPRESIÓN)
                 }])
                 pd.concat([df_movs, n_v]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
                 
-                st.session_state.confirmar_orden = True # Flag para mostrar descarga
-                st.success("Venta procesada con éxito")
+                st.session_state.confirmar_orden = True
+                st.success("Venta procesada")
 
             if st.session_state.get('confirmar_orden', False):
                 pdf_venta = generar_pdf_binario(cli_p, st.session_state.carrito, total_f, df_clientes, "ORDEN DE TRABAJO")
-                st.download_button("🖨️ IMPRIMIR ORDEN", pdf_venta, f"Orden_{cli_p}.pdf", "application/pdf", use_container_width=True)
+                st.download_button("🖨️ IMPRIMIR ORDEN", pdf_venta, f"Orden_{cli_p}.pdf", use_container_width=True)
                 if st.button("Cerrar Venta Actual"):
                     st.session_state.confirmar_orden = False
                     st.session_state.carrito = []
@@ -601,8 +601,10 @@ with tabs[7]: # 📦 REMITOS (ESTILO PRESUPUESTADOR)
     
     # 2. Selección de Productos (Igual a presupuestos pero sin elección de Lista)
     r1, r2 = st.columns([3, 1])
-    with r1:
-        i_r = st.selectbox("Articulo para el Remito:", df_stock["Accesorio"].tolist(), key="item_remito_final")
+    with rd1:
+            # LLAMADA UNIFICADA (mandamos total 0 para que sea remito)
+            pdf_remito = generar_pdf_binario(cli_r, st.session_state.remito_items, 0, df_clientes, "REMITO DE ENTREGA")
+            st.download_button("📥 DESCARGAR REMITO", pdf_remito, f"Remito_{cli_r}.pdf", use_container_width=True)
     with r2:
         q_r = st.number_input("Cantidad:", min_value=1, value=1, key="cant_remito_final")
     
