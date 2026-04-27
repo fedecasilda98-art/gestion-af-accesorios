@@ -168,122 +168,65 @@ else:
             c3.metric("Total Lista 2", formatear_moneda((df_stock['Lista 2 (Efectivo)'] * df_stock['Stock']).sum()))
         st.dataframe(df_stock, use_container_width=True, hide_index=True)
 
-   with tabs[1]: # LOTE
+    with tabs[1]: # LOTE
         st.header("🚚 Ingreso de Mercadería")
-        
-        # Sub-pestañas para organizar la carga y el historial
         tab_carga, tab_hist_ingresos = st.tabs(["📥 Cargar Lote", "📜 Historial de Ingresos"])
 
         with tab_carga:
-            if "lote_temporal" not in st.session_state:
-                st.session_state.lote_temporal = []
-
-            st.subheader("Seleccionar Artículos para Ingreso")
+            if "lote_temporal" not in st.session_state: st.session_state.lote_temporal = []
             
-            # Formulario de selección (estilo presupuestador)
             with st.container(border=True):
                 c1, c2, c3 = st.columns([3, 1, 1])
-                with c1:
-                    # Permite elegir uno existente o escribir uno nuevo
-                    opciones_stock = ["-- NUEVO ARTÍCULO --"] + df_stock["Accesorio"].tolist()
-                    prod_sel = st.selectbox("Artículo / Accesorio:", opciones_stock, key="sel_prod_lote")
-                
-                with c2:
-                    cant_ingreso = st.number_input("Cantidad:", min_value=0, value=0, key="cant_lote")
-                
-                with c3:
-                    costo_ingreso = st.number_input("Costo Unitario $:", min_value=0.0, step=0.1, key="costo_lote")
+                opciones_stock = ["-- NUEVO ARTÍCULO --"] + df_stock["Accesorio"].tolist()
+                prod_sel = c1.selectbox("Artículo:", opciones_stock, key="sel_prod_lote")
+                cant_ingreso = c2.number_input("Cantidad:", min_value=0, value=0, key="cant_lote")
+                costo_ingreso = c3.number_input("Costo Unitario $:", min_value=0.0, step=0.1, key="costo_lote")
 
-                # Si es nuevo, pedimos el resto de los datos
                 if prod_sel == "-- NUEVO ARTÍCULO --":
-                    c_n1, c_n2, c_n3 = st.columns(3)
-                    nombre_nuevo = c_n1.text_input("Nombre del Accesorio:", key="nombre_nuevo_lote")
-                    rubro_nuevo = c_n2.text_input("Rubro:", key="rubro_lote")
-                    prov_nuevo = c_n3.text_input("Proveedor:", key="prov_lote")
+                    cn1, cn2, cn3 = st.columns(3)
+                    nombre_nuevo = cn1.text_input("Nombre:", key="n_n_l")
+                    rubro_nuevo = cn2.text_input("Rubro:", key="r_n_l")
+                    prov_nuevo = cn3.text_input("Proveedor:", key="p_n_l")
                 
                 if st.button("➕ AGREGAR AL LISTADO", use_container_width=True):
                     nombre_final = nombre_nuevo if prod_sel == "-- NUEVO ARTÍCULO --" else prod_sel
                     if nombre_final and cant_ingreso > 0:
-                        # Buscamos datos por defecto si ya existe para no tener que rellenar todo
-                        item_existente = df_stock[df_stock["Accesorio"] == nombre_final]
-                        
-                        nuevo_item_lote = {
-                            "Rubro": rubro_nuevo if prod_sel == "-- NUEVO ARTÍCULO --" else item_existente["Rubro"].values[0],
-                            "Proveedor": prov_nuevo if prod_sel == "-- NUEVO ARTÍCULO --" else item_existente["Proveedor"].values[0],
-                            "Accesorio": nombre_final,
-                            "Stock": cant_ingreso,
-                            "Costo Base": costo_ingreso,
-                            "Flete": item_existente["Flete"].values[0] if not item_existente.empty else 0.0,
-                            "% Ganancia": item_existente["% Ganancia"].values[0] if not item_existente.empty else 40.0,
-                            "Descripcion": item_existente["Descripcion"].values[0] if not item_existente.empty else ""
+                        item_ex = df_stock[df_stock["Accesorio"] == nombre_final]
+                        nuevo_i = {
+                            "Rubro": rubro_nuevo if prod_sel == "-- NUEVO ARTÍCULO --" else item_ex["Rubro"].values[0],
+                            "Proveedor": prov_nuevo if prod_sel == "-- NUEVO ARTÍCULO --" else item_ex["Proveedor"].values[0],
+                            "Accesorio": nombre_final, "Stock": cant_ingreso, "Costo Base": costo_ingreso,
+                            "Flete": item_ex["Flete"].values[0] if not item_ex.empty else 0.0,
+                            "% Ganancia": item_ex["% Ganancia"].values[0] if not item_ex.empty else 40.0,
+                            "Descripcion": item_ex["Descripcion"].values[0] if not item_ex.empty else ""
                         }
-                        st.session_state.lote_temporal.append(nuevo_item_lote)
-                        st.rerun()
-                    else:
-                        st.error("Falta el nombre o la cantidad.")
+                        st.session_state.lote_temporal.append(nuevo_i); st.rerun()
 
-            # --- MOSTRAR EL LISTADO TEMPORAL ---
             if st.session_state.lote_temporal:
-                st.subheader("Listado a Procesar")
-                df_temp_lote = pd.DataFrame(st.session_state.lote_temporal)
-                
-                # Editor para corregir flete o ganancia antes de procesar
-                lote_final_edit = st.data_editor(df_temp_lote, num_rows="fixed", use_container_width=True, key="editor_lote_visual")
-                
-                col_b1, col_b2 = st.columns(2)
-                if col_b1.button("🗑️ LIMPIAR TODO", use_container_width=True):
-                    st.session_state.lote_temporal = []
-                    st.rerun()
-                
-                if col_b2.button("🚀 CONFIRMAR E INGRESAR AL STOCK", type="primary", use_container_width=True):
-                    detalle_hist = []
-                    inversion_total = 0
-                    
+                lote_final_edit = st.data_editor(pd.DataFrame(st.session_state.lote_temporal), use_container_width=True, key="ed_lote_vis")
+                if st.button("🚀 CONFIRMAR E INGRESAR AL STOCK", type="primary", use_container_width=True):
+                    detalle_hist = []; inv_total = 0
                     for _, r in lote_final_edit.iterrows():
-                        nombre = r["Accesorio"]
-                        stk_add = r["Stock"]
-                        cb = r["Costo Base"]
-                        fl = r["Flete"]
-                        ga = r["% Ganancia"]
-                        
-                        l1 = round((cb + fl) * (1 + ga/100), 2)
-                        l2 = round(l1 * 0.90, 2)
-                        inversion_total += (stk_add * cb)
-                        detalle_hist.append(f"{stk_add}x {nombre} (${cb})")
-
-                        mask = df_stock["Accesorio"] == nombre
+                        n, stk, cb, fl, ga = r["Accesorio"], r["Stock"], r["Costo Base"], r["Flete"], r["% Ganancia"]
+                        l1 = round((cb + fl) * (1 + ga/100), 2); l2 = round(l1 * 0.90, 2)
+                        inv_total += (stk * cb); detalle_hist.append(f"{stk}x {n} (${cb})")
+                        mask = df_stock["Accesorio"] == n
                         if mask.any():
-                            df_stock.loc[mask, "Stock"] += stk_add
+                            df_stock.loc[mask, "Stock"] += stk
                             df_stock.loc[mask, ["Costo Base", "Flete", "% Ganancia", "Lista 1 (Cheques)", "Lista 2 (Efectivo)"]] = [cb, fl, ga, l1, l2]
                         else:
-                            nueva_f = pd.DataFrame([{"Rubro": r["Rubro"], "Proveedor": r["Proveedor"], "Accesorio": nombre, "Stock": stk_add, "Costo Base": cb, "Flete": fl, "% Ganancia": ga, "Lista 1 (Cheques)": l1, "Lista 2 (Efectivo)": l2, "Descripcion": r["Descripcion"]}])
-                            df_stock = pd.concat([df_stock, nueva_f], ignore_index=True)
-
-                    # Guardar Stock
+                            nf = pd.DataFrame([{"Rubro": r["Rubro"], "Proveedor": r["Proveedor"], "Accesorio": n, "Stock": stk, "Costo Base": cb, "Flete": fl, "% Ganancia": ga, "Lista 1 (Cheques)": l1, "Lista 2 (Efectivo)": l2, "Descripcion": r["Descripcion"]}])
+                            df_stock = pd.concat([df_stock, nf], ignore_index=True)
                     df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
-
-                    # Guardar Historial Detallado
-                    nuevo_h = pd.DataFrame([{
-                        "Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                        "Articulos": " | ".join(detalle_hist),
-                        "Costo Total Compra": round(inversion_total, 2)
-                    }])
-                    pd.concat([df_lotes_historial, nuevo_h], ignore_index=True).to_csv(ARCHIVO_REGISTRO_LOTES, index=False)
-                    
-                    st.session_state.lote_temporal = []
-                    st.success("✅ Stock actualizado e historial guardado."); st.rerun()
+                    n_h = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Articulos": " | ".join(detalle_hist), "Costo Total Compra": round(inv_total, 2)}])
+                    pd.concat([df_lotes_historial, n_h], ignore_index=True).to_csv(ARCHIVO_REGISTRO_LOTES, index=False)
+                    st.session_state.lote_temporal = []; st.success("✅ Stock actualizado."); st.rerun()
 
         with tab_hist_ingresos:
-            st.subheader("Registro Histórico de Compras")
             df_v_h = cargar_datos(ARCHIVO_REGISTRO_LOTES, COLS_REGISTRO_LOTES)
-            if not df_v_h.empty:
-                for idx, row in df_v_h.sort_index(ascending=False).iterrows():
-                    with st.expander(f"📦 Fecha: {row['Fecha']} | Inversión: {formatear_moneda(row['Costo Total Compra'])}"):
-                        items = row["Articulos"].split(" | ")
-                        for it in items:
-                            st.write(f"🔹 {it}")
-            else:
-                st.info("No hay ingresos registrados.")
+            for idx, row in df_v_h.sort_index(ascending=False).iterrows():
+                with st.expander(f"📦 {row['Fecha']} | Inversión: {formatear_moneda(row['Costo Total Compra'])}"):
+                    for it in row["Articulos"].split(" | "): st.write(f"🔹 {it}")
 
    with tabs[2]: # MAESTRO
         st.header("⚙️ Maestro de Artículos")
