@@ -665,27 +665,28 @@ else:
                     n_m = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_sel, "Tipo": "PAGO", "Monto": m_p, "Metodo": "Efectivo", "Detalle": "Pago registrado"}])
                     pd.concat([df_movs, n_m], ignore_index=True).to_csv(ARCHIVO_MOVIMIENTOS, index=False); st.rerun()
 
-    with tabs[4]: # GENERACIÓN DE DOCUMENTOS
-        st.header("📄 Presupuestos, Órdenes y Notas de Crédito")
+    with tabs[4]: # PRESUPUESTOS, ÓRDENES Y NOTAS DE CRÉDITO
+        st.header("📄 Generación de Documentos")
         
-        tipo_doc = st.radio("Tipo de operación:", ["PRESUPUESTO", "ORDEN DE COMPRA", "NOTA DE CRÉDITO"], horizontal=True)
+        tipo_doc = st.radio("Tipo de operación:", ["PRESUPUESTO", "ORDEN DE COMPRA", "NOTA DE CRÉDITO"], horizontal=True, key="radio_p4")
         
         if "carrito_gral" not in st.session_state: st.session_state.carrito_gral = []
         if "doc_listo" not in st.session_state: st.session_state.doc_listo = None
 
         with st.container(border=True):
             c_cli, c_fec = st.columns([2, 1])
-            cliente_sel = c_cli.selectbox("Cliente:", df_clientes["Nombre"].tolist(), key="cli_p4")
+            cliente_sel = c_cli.selectbox("Cliente:", df_clientes["Nombre"].tolist(), key="cli_p4_final")
             
             st.divider()
             col1, col2 = st.columns([3, 1])
-            prod_p = col1.selectbox("Artículo:", df_stock["Accesorio"].tolist(), key="prod_p4")
-            cant_p = col2.number_input("Cantidad:", min_value=1, value=1, key="cant_p4")
+            prod_p = col1.selectbox("Artículo:", df_stock["Accesorio"].tolist(), key="prod_p4_final")
+            cant_p = col2.number_input("Cantidad:", min_value=1, value=1, key="cant_p4_final")
             
+            # Buscamos precio unitario
             p_unit = df_stock[df_stock["Accesorio"] == prod_p]["Lista 1 (Cheques)"].values[0]
             st.write(f"Precio Unit: **{formatear_moneda(p_unit)}**")
 
-            if st.button("➕ AGREGAR ÍTEM", use_container_width=True):
+            if st.button("➕ AGREGAR ÍTEM", use_container_width=True, key="btn_add_p4"):
                 st.session_state.carrito_gral.append({"Producto": prod_p, "Cantidad": cant_p, "Precio Unit": p_unit, "Subtotal": round(cant_p * p_unit, 2)})
                 st.rerun()
 
@@ -695,7 +696,13 @@ else:
             total_doc = df_carrito["Subtotal"].sum()
             st.subheader(f"Total: {formatear_moneda(total_doc)}")
             
-            if st.button(f"🚀 CONFIRMAR {tipo_doc}", type="primary", use_container_width=True):
+            c_acc1, c_acc2 = st.columns(2)
+            if c_acc1.button("🗑️ VACIAR", use_container_width=True):
+                st.session_state.carrito_gral = []
+                st.session_state.doc_listo = None
+                st.rerun()
+
+            if c_acc2.button(f"🚀 GENERAR {tipo_doc}", type="primary", use_container_width=True):
                 import io
                 buf = io.BytesIO()
                 detalle_txt = " | ".join([f"{i['Cantidad']}x {i['Producto']}" for i in st.session_state.carrito_gral])
@@ -703,89 +710,81 @@ else:
                 buf.write(resumen.encode())
                 st.session_state.doc_listo = buf.getvalue()
                 
-                # Guardamos en el historial para que aparezca en la pestaña 5
+                # Guardar en el historial para la pestaña 5
                 nuevo_mov = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": cliente_sel, "Tipo": tipo_doc, "Monto": total_doc, "Detalle": detalle_txt, "Metodo": "Pendiente"}])
-                pd.concat([cargar_datos(ARCHIVO_MOVIMIENTOS, COLS_MOVIMIENTOS), nuevo_mov], ignore_index=True).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
-                st.success("✅ Guardado en historial.")
+                df_hist_save = cargar_datos(ARCHIVO_MOVIMIENTOS, COLS_MOVIMIENTOS)
+                pd.concat([df_hist_save, nuevo_mov], ignore_index=True).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
+                st.success("✅ Documento registrado en el historial.")
 
             if st.session_state.doc_listo:
-                st.download_button("📥 DESCARGAR COMPROBANTE", data=st.session_state.doc_listo, file_name=f"{tipo_doc}.txt", use_container_width=True)
+                st.download_button("📥 DESCARGAR COMPROBANTE", data=st.session_state.doc_listo, file_name=f"{tipo_doc}.txt", use_container_width=True, key="dl_p4_final")
 
-    with tabs[5]: # HISTORIAL
+    with tabs[5]: # HISTORIAL DE OPERACIONES
         st.header("📜 Historial de Operaciones")
-        df_hist = cargar_datos(ARCHIVO_MOVIMIENTOS, COLS_MOVIMIENTOS)
+        df_hist_view = cargar_datos(ARCHIVO_MOVIMIENTOS, COLS_MOVIMIENTOS)
         
-        if not df_hist.empty:
-            for idx, row in df_hist.sort_index(ascending=False).iterrows():
+        if not df_hist_view.empty:
+            for idx, row in df_hist_view.sort_index(ascending=False).iterrows():
                 with st.expander(f"{row['Fecha']} | {row['Cliente']} | {row['Tipo']} | {formatear_moneda(row['Monto'])}"):
                     st.write(f"**Detalle:** {row['Detalle']}")
                     
                     import io
                     b_h = io.BytesIO()
-                    txt_h = f"COMPROBANTE\n{row['Tipo']}\nCliente: {row['Cliente']}\nTotal: {row['Monto']}\nDetalle: {row['Detalle']}"
+                    txt_h = f"COMPROBANTE\nTipo: {row['Tipo']}\nCliente: {row['Cliente']}\nTotal: {row['Monto']}\nDetalle: {row['Detalle']}"
                     b_h.write(txt_h.encode())
                     
-                    st.download_button("📥 Descargar PDF", data=b_h.getvalue(), file_name=f"Doc_{idx}.txt", key=f"btn_h_{idx}", use_container_width=True)
+                    st.download_button("📥 Descargar PDF (TXT)", data=b_h.getvalue(), file_name=f"Comprobante_{idx}.txt", key=f"btn_dl_h_{idx}", use_container_width=True)
         else:
-            st.info("No hay movimientos registrados.")
+            st.info("No hay movimientos registrados aún.")
 
-    with tabs[6]: # CIERRE
-        st.header("🏁 Cierre de Caja")
-        c1, c2 = st.columns(2)
-        v_s = round((df_stock['Stock'] * df_stock['Costo Base']).sum(), 2)
-        c1.metric("Valor Stock", formatear_moneda(v_s))
-        c2.metric("Deuda Clientes", formatear_moneda(df_clientes['Saldo'].sum()))
+    with tabs[6]: # CIERRE DE CAJA (O la que tuvieras aquí)
+        st.header("🏁 Resumen de Caja")
+        st.write("Función en desarrollo según los movimientos del historial.")
 
     with tabs[7]: # REMITOS
-        st.header("📦 Generar Remito de Entrega")
+        st.header("📦 Generador de Remitos")
         
-        # 1. Estado para el archivo de remito
-        if "buffer_remito" not in st.session_state:
-            st.session_state.buffer_remito = None
+        if "carrito_remitos" not in st.session_state: st.session_state.carrito_remitos = []
+        if "remito_final" not in st.session_state: st.session_state.remito_final = None
 
         with st.container(border=True):
-            r1, r2 = st.columns([3, 1])
-            with r1:
-                art_r = st.selectbox("Artículo:", df_stock["Accesorio"].tolist(), key="sel_art_remito")
-            with r2:
-                # Aquí corregimos la línea que se te había cortado
-                q_r = st.number_input("Cant:", min_value=1, value=1, key="cant_remito_final")
+            cr1, cr2 = st.columns([2, 1])
+            cli_rem = cr1.selectbox("Entregar a:", df_clientes["Nombre"].tolist(), key="cli_r_final")
+            obs_rem = cr2.text_input("Obs:", key="obs_r_final")
             
-            det_r = st.text_input("Observaciones (opcional):", key="obs_remito")
+            st.divider()
+            r1, r2 = st.columns([3, 1])
+            art_r = r1.selectbox("Artículo:", df_stock["Accesorio"].tolist(), key="art_r_final")
+            can_r = r2.number_input("Cant:", min_value=1, value=1, key="can_r_final")
 
-            if st.button("🚀 GENERAR REMITO Y DESCARGAR", use_container_width=True):
-                import io
-                buf_remito = io.BytesIO()
-                fecha_r = datetime.now().strftime('%d/%m/%Y %H:%M')
-                txt_remito = f"REMITO DE ENTREGA\nFecha: {fecha_r}\n"
-                txt_remito += "-"*30 + "\n"
-                txt_remito += f"Detalle: {q_r}x {art_r}\n"
-                if det_r: 
-                    txt_remito += f"Obs: {det_r}\n"
-                txt_remito += "-"*30 + "\n\nFirma Receptor: ________________"
+            if st.button("➕ AGREGAR AL REMITO", use_container_width=True, key="btn_add_r"):
+                st.session_state.carrito_remitos.append({"Producto": art_r, "Cantidad": can_r})
+                st.rerun()
+
+        if st.session_state.carrito_remitos:
+            st.table(pd.DataFrame(st.session_state.carrito_remitos))
+            
+            ra, rb = st.columns(2)
+            if ra.button("🗑️ LIMPIAR", use_container_width=True, key="clear_r"):
+                st.session_state.carrito_remitos = []
+                st.session_state.remito_final = None
+                st.rerun()
                 
-                buf_remito.write(txt_remito.encode())
-                st.session_state.buffer_remito = buf_remito.getvalue()
-                st.success("✅ Remito generado con éxito.")
+            if rb.button("🚀 GENERAR REMITO", type="primary", use_container_width=True, key="gen_r"):
+                import io
+                buf_r = io.BytesIO()
+                txt_r = f"REMITO DE ENTREGA\nCliente: {cli_rem}\nFecha: {datetime.now().strftime('%d/%m/%Y')}\n"
+                if obs_rem: txt_r += f"Obs: {obs_rem}\n"
+                txt_r += "-"*30 + "\n"
+                for i in st.session_state.carrito_remitos:
+                    txt_r += f"• {i['Cantidad']}x {i['Producto']}\n"
+                txt_r += "\nFirma: ________________"
+                buf_r.write(txt_r.encode())
+                st.session_state.remito_final = buf_r.getvalue()
+                st.success("✅ Remito listo.")
 
-        # 2. El botón de descarga (Aparece solo si el buffer tiene datos)
-        if st.session_state.buffer_remito:
-            st.download_button(
-                label="📥 DESCARGAR REMITO (TXT)",
-                data=st.session_state.buffer_remito,
-                file_name=f"Remito_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
-                mime="text/plain",
-                use_container_width=True
-            )
-
-st.divider()
-with st.expander("🚀 CARGAR BASES DE DATOS AL VOLUMEN"):
-    archivo_subido = st.file_uploader("Elegir archivo CSV", type="csv")
-    destino = st.selectbox("¿Qué archivo estás subiendo?", [ARCHIVO_ARTICULOS, ARCHIVO_CLIENTES, ARCHIVO_MOVIMIENTOS])
-    if st.button("Guardar en Railway"):
-        if archivo_subido:
-            with open(destino, "wb") as f: f.write(archivo_subido.getbuffer())
-            st.success(f"✅ ¡{destino} guardado!"); st.rerun()
+            if st.session_state.remito_final:
+                st.download_button("📥 DESCARGAR REMITO", data=st.session_state.remito_final, file_name="Remito.txt", use_container_width=True, key="dl_r_final")
 
 
 st.divider()
