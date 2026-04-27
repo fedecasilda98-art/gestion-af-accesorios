@@ -70,50 +70,80 @@ class PDF(FPDF):
 
 def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRESUPUESTO", fecha_fija=None):
     try:
-        pdf = PDF() 
-        pdf.add_page()
-        info_cli = df_clientes[df_clientes["Nombre"] == cliente_nombre]
-        tel = str(info_cli["Tel"].values[0]) if not info_cli.empty else "-"
-        loc = str(info_cli["Localidad"].values[0]) if not info_cli.empty else "-"
-        dir = str(info_cli["Direccion"].values[0]) if not info_cli.empty else "-"
-        fecha_display = fecha_fija if fecha_fija else datetime.now().strftime('%d/%m/%Y %H:%M')
+        # Extraer datos del cliente para el encabezado
+        datos_cli = df_clientes[df_clientes["Nombre"] == cliente_nombre]
+        tel = str(datos_cli["Tel"].values[0]) if not datos_cli.empty else "-"
+        loc = str(datos_cli["Localidad"].values[0]) if not datos_cli.empty else "-"
+        dir = str(datos_cli["Direccion"].values[0]) if not datos_cli.empty else "-"
+        fecha = fecha_fija if fecha_fija else datetime.now().strftime("%d/%m/%Y %H:%M")
 
-        pdf.set_fill_color(240, 240, 240)
-        pdf.set_font("Helvetica", "B", 11)
-        pdf.cell(0, 8, f" TIPO DE DOCUMENTO: {titulo}", ln=True, fill=True, border=1)
-        pdf.ln(2)
+        pdf = FPDF()
+        pdf.add_page()
         
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(95, 7, f" CLIENTE: {cliente_nombre}", border="LT")
-        pdf.cell(95, 7, f" FECHA: {fecha_display}", border="RT", ln=True)
-        pdf.set_font("Helvetica", "", 10)
-        pdf.cell(95, 7, f" TEL: {tel}", border="L")
-        pdf.cell(95, 7, f" LOCALIDAD: {loc}", border="R", ln=True)
-        pdf.cell(190, 7, f" DIRECCION: {dir}", border="LRB", ln=True)
+        # --- ENCABEZADO (LOGO Y EMPRESA) ---
+        # Si tenés el logo como archivo 'logo.png' en la carpeta raíz, descomentá la siguiente línea:
+        # pdf.image("logo.png", 10, 8, 33) 
+        
+        pdf.set_font("Arial", "B", 16)
+        pdf.cell(50) # Espacio para el logo
+        pdf.cell(0, 10, "AF ACCESORIOS - ALUMINIO", ln=True)
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(50)
+        pdf.cell(0, 5, "Casilda, Santa Fe | WhatsApp: +54 9 341 351-2049", ln=True)
+        pdf.ln(10)
+
+        # --- TIPO DE DOCUMENTO ---
+        pdf.set_fill_color(240, 240, 240) # Gris claro
+        pdf.set_font("Arial", "B", 11)
+        pdf.cell(0, 8, f" TIPO DE DOCUMENTO: {titulo}", border=1, ln=True, fill=True)
+
+        # --- DATOS DEL CLIENTE ---
+        pdf.set_font("Arial", "B", 10)
+        # Fila 1
+        pdf.cell(95, 8, f" CLIENTE: {cliente_nombre}", border="LR")
+        pdf.cell(0, 8, f" FECHA: {fecha}", border="R", ln=True)
+        # Fila 2
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(95, 8, f" TEL: {tel}", border="LR")
+        pdf.cell(0, 8, f" LOCALIDAD: {loc}", border="R", ln=True)
+        # Fila 3
+        pdf.cell(0, 8, f" DIRECCIÓN: {dir}", border="LRB", ln=True)
         pdf.ln(5)
-        
-        pdf.set_font("Helvetica", "B", 10); pdf.set_fill_color(200, 200, 200)
-        pdf.cell(100, 10, " Articulo", border=1, fill=True)
-        pdf.cell(20, 10, "Cant.", border=1, fill=True, align="C")
-        pdf.cell(35, 10, "P. Unit", border=1, fill=True, align="R")
-        pdf.cell(35, 10, "Subtotal", border=1, fill=True, align="R", ln=True)
-        
-        pdf.set_font("Helvetica", "", 10)
+
+        # --- TABLA DE ARTÍCULOS ---
+        pdf.set_fill_color(200, 200, 200) # Gris más oscuro para cabecera
+        pdf.set_font("Arial", "B", 10)
+        pdf.cell(110, 8, " Artículo / Accesorio", 1, 0, "L", fill=True)
+        pdf.cell(20, 8, "Cant.", 1, 0, "C", fill=True)
+        pdf.cell(30, 8, "P. Unit", 1, 0, "C", fill=True)
+        pdf.cell(30, 8, "Subtotal", 1, 1, "C", fill=True)
+
+        # Items
+        pdf.set_font("Arial", "", 10)
         for item in carrito:
-            pdf.cell(100, 8, f" {item['Producto']}", border=1)
-            pdf.cell(20, 8, str(item['Cant']), border=1, align="C")
-            pdf.cell(35, 8, f"{formatear_moneda(item['Precio U.'])} ", border=1, align="R")
-            pdf.cell(35, 8, f"{formatear_moneda(item['Subtotal'])} ", border=1, align="R", ln=True)
-        
-        pdf.ln(2); pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(155, 10, "TOTAL:", border=0, align="R")
-        pdf.cell(35, 10, f"{formatear_moneda(total)}", border=1, align="R")
-        
+            # Calculamos p.unit para mostrarlo (si es remito será 0)
+            p_unit = item['Subtotal'] / item['Cant'] if item['Cant'] > 0 else 0
+            
+            pdf.cell(110, 8, f" {item['Producto']}", 1)
+            pdf.cell(20, 8, str(item['Cant']), 1, 0, "C")
+            pdf.cell(30, 8, formatear_moneda(p_unit), 1, 0, "R")
+            pdf.cell(30, 8, formatear_moneda(item['Subtotal']), 1, 1, "R")
+
+        # --- TOTAL ---
+        pdf.ln(2)
+        pdf.set_font("Arial", "B", 12)
+        pdf.cell(130) # Desplazar a la derecha
+        pdf.cell(30, 10, "TOTAL: ", 0, 0, "R")
+        pdf.cell(30, 10, f" {formatear_moneda(total)}", 1, 1, "R")
+
+        # Retornar el PDF como bytes
         res = pdf.output(dest='S')
-        if isinstance(res, str): return res.encode('latin-1', 'replace')
+        if isinstance(res, str):
+            return res.encode('latin-1', 'replace')
         return bytes(res)
+
     except Exception as e:
-        st.error(f"Error PDF: {str(e)}")
+        st.error(f"Error al generar el PDF: {e}")
         return b""
 
 # --- INTERFAZ PRINCIPAL ---
@@ -201,6 +231,7 @@ with tabs[1]: # 🚚 LOTE
                     df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
                     st.success(f"Producto {n_acc} creado.")
                     st.rerun()
+
 with tabs[2]: # ⚙️ MAESTRO
     st.header("⚙️ Maestro de Artículos")
     
