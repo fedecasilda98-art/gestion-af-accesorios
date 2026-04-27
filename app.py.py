@@ -52,6 +52,8 @@ COLS_ARTICULOS = ["Rubro", "Proveedor", "Accesorio", "Stock", "Costo Base", "Fle
 COLS_CLIENTES = ["Nombre", "Tel", "Localidad", "Direccion", "Saldo"]
 COLS_MOVS = ["Fecha", "Cliente", "Tipo", "Monto", "Metodo", "Detalle"]
 COLS_REGISTRO_LOTES = ["Fecha", "Articulos", "Costo Total Compra"]
+COLS_MOVIMIENTOS = ["Fecha", "Cliente", "Tipo", "Monto", "Detalle", "Metodo"]
+ARCHIVO_MOVIMIENTOS = "movimientos_comerciales.csv"
 
 df_stock = cargar_datos(ARCHIVO_ARTICULOS, COLS_ARTICULOS)
 df_clientes = cargar_datos(ARCHIVO_CLIENTES, COLS_CLIENTES)
@@ -294,128 +296,69 @@ else:
                     n_m = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_sel, "Tipo": "PAGO", "Monto": m_p, "Metodo": "Efectivo", "Detalle": "Pago registrado"}])
                     pd.concat([df_movs, n_m], ignore_index=True).to_csv(ARCHIVO_MOVIMIENTOS, index=False); st.rerun()
 
-    with tabs[4]: # PRESUPUESTADOR, ÓRDENES Y NOTAS DE CRÉDITO
+    with tabs[4]: # GENERACIÓN DE DOCUMENTOS
         st.header("📄 Presupuestos, Órdenes y Notas de Crédito")
         
-        # 1. Selección de Tipo de Documento
-        tipo_doc_p = st.radio("Seleccionar tipo de documento:", 
-                             ["PRESUPUESTO", "ORDEN DE COMPRA", "NOTA DE CRÉDITO"], 
-                             horizontal=True, key="tipo_doc_p_root")
+        tipo_doc = st.radio("Tipo de operación:", ["PRESUPUESTO", "ORDEN DE COMPRA", "NOTA DE CRÉDITO"], horizontal=True)
         
-        # Inicializamos el carrito específico si no existe
-        if "carrito_general" not in st.session_state:
-            st.session_state.carrito_general = []
-        if "buffer_doc_listo" not in st.session_state:
-            st.session_state.buffer_doc_listo = None
+        if "carrito_gral" not in st.session_state: st.session_state.carrito_gral = []
+        if "doc_listo" not in st.session_state: st.session_state.doc_listo = None
 
         with st.container(border=True):
-            col_cli, col_fec = st.columns([2, 1])
-            cli_p = col_cli.selectbox("Cliente:", df_clientes["Nombre"].tolist(), key="cli_p_p")
+            c_cli, c_fec = st.columns([2, 1])
+            cliente_sel = c_cli.selectbox("Cliente:", df_clientes["Nombre"].tolist(), key="cli_p4")
             
             st.divider()
+            col1, col2 = st.columns([3, 1])
+            prod_p = col1.selectbox("Artículo:", df_stock["Accesorio"].tolist(), key="prod_p4")
+            cant_p = col2.number_input("Cantidad:", min_value=1, value=1, key="cant_p4")
             
-            c1, c2 = st.columns([3, 1])
-            prod_p = c1.selectbox("Accesorio/Herraje:", df_stock["Accesorio"].tolist(), key="sel_prod_p_p")
-            q_p = c2.number_input("Cantidad:", min_value=1, value=1, key="cant_prod_p_p")
-            
-            # Buscamos precio según el tipo (por ahora Lista 1)
-            precio_u = df_stock[df_stock["Accesorio"] == prod_p]["Lista 1 (Cheques)"].values[0]
-            st.write(f"Precio Unitario: **{formatear_moneda(precio_u)}**")
+            p_unit = df_stock[df_stock["Accesorio"] == prod_p]["Lista 1 (Cheques)"].values[0]
+            st.write(f"Precio Unit: **{formatear_moneda(p_unit)}**")
 
             if st.button("➕ AGREGAR ÍTEM", use_container_width=True):
-                st.session_state.carrito_general.append({
-                    "Producto": prod_p,
-                    "Cantidad": q_p,
-                    "Precio Unit": precio_u,
-                    "Subtotal": round(q_p * precio_u, 2)
-                })
+                st.session_state.carrito_gral.append({"Producto": prod_p, "Cantidad": cant_p, "Precio Unit": p_unit, "Subtotal": round(cant_p * p_unit, 2)})
                 st.rerun()
 
-        # 3. Listado y Generación
-        if st.session_state.carrito_general:
-            df_p_actual = pd.DataFrame(st.session_state.carrito_general)
-            st.table(df_p_actual)
+        if st.session_state.carrito_gral:
+            df_carrito = pd.DataFrame(st.session_state.carrito_gral)
+            st.table(df_carrito)
+            total_doc = df_carrito["Subtotal"].sum()
+            st.subheader(f"Total: {formatear_moneda(total_doc)}")
             
-            total_gral = df_p_actual["Subtotal"].sum()
-            st.subheader(f"Total {tipo_doc_p}: {formatear_moneda(total_gral)}")
-            
-            b1, b2 = st.columns(2)
-            if b1.button("🗑️ REINICIAR", use_container_width=True):
-                st.session_state.carrito_general = []
-                st.session_state.buffer_doc_listo = None
-                st.rerun()
-            
-            if b2.button(f"💾 GENERAR {tipo_doc_p}", type="primary", use_container_width=True):
+            if st.button(f"🚀 CONFIRMAR {tipo_doc}", type="primary", use_container_width=True):
                 import io
                 buf = io.BytesIO()
-                fecha_doc = datetime.now().strftime('%d/%m/%Y %H:%M')
-                txt = f"{tipo_doc_p}\nCliente: {cli_p}\nFecha: {fecha_doc}\n"
-                txt += "-"*40 + "\n"
-                for i in st.session_state.carrito_general:
-                    txt += f"{i['Cantidad']}x {i['Producto']} | ${i['Precio Unit']} | Sub: ${i['Subtotal']}\n"
-                txt += "-"*40 + f"\nTOTAL: ${total_gral}"
+                detalle_txt = " | ".join([f"{i['Cantidad']}x {i['Producto']}" for i in st.session_state.carrito_gral])
+                resumen = f"{tipo_doc}\nCliente: {cliente_sel}\nTotal: ${total_doc}\nDetalle: {detalle_txt}"
+                buf.write(resumen.encode())
+                st.session_state.doc_listo = buf.getvalue()
                 
-                buf.write(txt.encode())
-                st.session_state.buffer_doc_listo = buf.getvalue()
-                st.success(f"✅ {tipo_doc_p} generado correctamente.")
+                # Guardamos en el historial para que aparezca en la pestaña 5
+                nuevo_mov = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": cliente_sel, "Tipo": tipo_doc, "Monto": total_doc, "Detalle": detalle_txt, "Metodo": "Pendiente"}])
+                pd.concat([cargar_datos(ARCHIVO_MOVIMIENTOS, COLS_MOVIMIENTOS), nuevo_mov], ignore_index=True).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
+                st.success("✅ Guardado en historial.")
 
-            # 4. Botón de descarga automática (manual por clic)
-            if st.session_state.buffer_doc_listo:
-                st.download_button(
-                    label=f"📥 DESCARGAR {tipo_doc_p}",
-                    data=st.session_state.buffer_doc_listo,
-                    file_name=f"{tipo_doc_p}_{datetime.now().strftime('%Y%m%d')}.txt",
-                    mime="text/plain",
-                    use_container_width=True
-                )
-    with tabs[5]: # HISTORIAL DE DOCUMENTOS (Órdenes/Notas de Crédito/Pagos)
+            if st.session_state.doc_listo:
+                st.download_button("📥 DESCARGAR COMPROBANTE", data=st.session_state.doc_listo, file_name=f"{tipo_doc}.txt", use_container_width=True)
+
+    with tabs[5]: # HISTORIAL
         st.header("📜 Historial de Operaciones")
+        df_hist = cargar_datos(ARCHIVO_MOVIMIENTOS, COLS_MOVIMIENTOS)
         
-        # Cargamos los movimientos de la base de datos
-        df_mov_hist = cargar_datos(ARCHIVO_MOVIMIENTOS, COLS_MOVIMIENTOS)
-        
-        if not df_mov_hist.empty:
-            # Buscador por cliente para filtrar el historial
-            filtro_cli = st.selectbox("Filtrar historial por Cliente:", ["TODOS"] + df_clientes["Nombre"].tolist(), key="filt_hist_p5")
-            
-            df_mostrar = df_mov_hist.copy()
-            if filtro_cli != "TODOS":
-                df_mostrar = df_mostrar[df_mostrar["Cliente"] == filtro_cli]
-
-            # Ordenamos por fecha (más reciente arriba)
-            df_mostrar = df_mostrar.sort_index(ascending=False)
-
-            for idx, row in df_mostrar.iterrows():
-                # Elegimos un ícono según el tipo de operación
-                icon = "📋" if "VENTA" in row["Tipo"] else "🔄" if "NOTA" in row["Tipo"] else "💰"
-                
-                with st.expander(f"{icon} {row['Fecha']} | {row['Cliente']} | {row['Tipo']} | {formatear_moneda(row['Monto'])}"):
+        if not df_hist.empty:
+            for idx, row in df_hist.sort_index(ascending=False).iterrows():
+                with st.expander(f"{row['Fecha']} | {row['Cliente']} | {row['Tipo']} | {formatear_moneda(row['Monto'])}"):
                     st.write(f"**Detalle:** {row['Detalle']}")
-                    st.write(f"**Método/Estado:** {row['Metodo']}")
                     
-                    # Lógica de descarga para cada ítem del historial
                     import io
-                    buf_h = io.BytesIO()
-                    txt_h = f"COMPROBANTE DE {row['Tipo']}\n"
-                    txt_h += "="*30 + "\n"
-                    txt_h += f"Fecha: {row['Fecha']}\n"
-                    txt_h += f"Cliente: {row['Cliente']}\n"
-                    txt_h += f"Monto: ${row['Monto']}\n"
-                    txt_h += f"Detalle: {row['Detalle']}\n"
-                    txt_h += "="*30 + "\n"
+                    b_h = io.BytesIO()
+                    txt_h = f"COMPROBANTE\n{row['Tipo']}\nCliente: {row['Cliente']}\nTotal: {row['Monto']}\nDetalle: {row['Detalle']}"
+                    b_h.write(txt_h.encode())
                     
-                    buf_h.write(txt_h.encode())
-                    
-                    st.download_button(
-                        label=f"📥 Descargar PDF {row['Tipo']}",
-                        data=buf_h.getvalue(),
-                        file_name=f"Comprobante_{row['Cliente']}_{idx}.txt",
-                        mime="text/plain",
-                        key=f"dl_{idx}",
-                        use_container_width=True
-                    )
+                    st.download_button("📥 Descargar PDF", data=b_h.getvalue(), file_name=f"Doc_{idx}.txt", key=f"btn_h_{idx}", use_container_width=True)
         else:
-            st.info("Aún no hay movimientos registrados en el historial.")
+            st.info("No hay movimientos registrados.")
 
     with tabs[6]: # CIERRE
         st.header("🏁 Cierre de Caja")
