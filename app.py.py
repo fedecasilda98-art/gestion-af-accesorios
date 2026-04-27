@@ -141,7 +141,6 @@ def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRE
         if isinstance(res, str):
             return res.encode('latin-1', 'replace')
         return bytes(res)
-
     except Exception as e:
         st.error(f"Error al generar el PDF: {e}")
         return b""
