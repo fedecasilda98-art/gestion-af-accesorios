@@ -397,7 +397,7 @@ else:
         c1.metric("Valor Stock", formatear_moneda(v_s))
         c2.metric("Deuda Clientes", formatear_moneda(df_clientes['Saldo'].sum()))
 
-   with tabs[7]: # REMITOS
+    with tabs[7]: # REMITOS
         st.header("📦 Generar Remito de Entrega")
         
         # 1. Estado para el archivo de remito
