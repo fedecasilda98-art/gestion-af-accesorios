@@ -409,7 +409,7 @@ else:
             with r1:
                 art_r = st.selectbox("Artículo:", df_stock["Accesorio"].tolist(), key="sel_art_remito")
             with r2:
-                # AQUÍ ESTABA EL ERROR: La línea debe estar completa así
+                # Aquí corregimos la línea que se te había cortado
                 q_r = st.number_input("Cant:", min_value=1, value=1, key="cant_remito_final")
             
             det_r = st.text_input("Observaciones (opcional):", key="obs_remito")
@@ -417,19 +417,19 @@ else:
             if st.button("🚀 GENERAR REMITO Y DESCARGAR", use_container_width=True):
                 import io
                 buf_remito = io.BytesIO()
-                # Armamos un texto simple para el remito
                 fecha_r = datetime.now().strftime('%d/%m/%Y %H:%M')
                 txt_remito = f"REMITO DE ENTREGA\nFecha: {fecha_r}\n"
                 txt_remito += "-"*30 + "\n"
                 txt_remito += f"Detalle: {q_r}x {art_r}\n"
-                if det_r: txt_remito += f"Obs: {det_r}\n"
+                if det_r: 
+                    txt_remito += f"Obs: {det_r}\n"
                 txt_remito += "-"*30 + "\n\nFirma Receptor: ________________"
                 
                 buf_remito.write(txt_remito.encode())
                 st.session_state.buffer_remito = buf_remito.getvalue()
                 st.success("✅ Remito generado con éxito.")
 
-        # 2. Botón de descarga (Aparece solo si se generó el remito)
+        # 2. El botón de descarga (Aparece solo si el buffer tiene datos)
         if st.session_state.buffer_remito:
             st.download_button(
                 label="📥 DESCARGAR REMITO (TXT)",
