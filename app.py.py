@@ -325,6 +325,27 @@ else:
                 if st.button("🔵 N. CRÉDITO", use_container_width=True): st.session_state.confirmar_nc = True
             with b4:
                 if st.button("🗑️ LIMPIAR", use_container_width=True): st.session_state.carrito = []; st.rerun()
+if st.button("🚀 CONFIRMAR ORDEN"):
+    # 1. Generamos el contenido (suponiendo que es un texto o CSV por ahora)
+    buffer = io.BytesIO()
+    
+    # Supongamos que armamos un resumen de la orden
+    resumen_orden = f"Orden de: {cliente_seleccionado}\nFecha: {datetime.now()}\nDetalle: {detalle_final}"
+    
+    # Lo guardamos en el buffer (si fuera PDF o Excel, aquí iría la lógica del archivo)
+    buffer.write(resumen_orden.encode())
+    buffer.seek(0)
+    
+    # 2. Mostramos el botón de descarga que APARECE solo al confirmar
+    st.success("✅ Orden procesada con éxito.")
+    
+    st.download_button(
+        label="📥 DESCARGAR COMPROBANTE",
+        data=buffer,
+        file_name=f"Orden_{cliente_seleccionado}_{datetime.now().strftime('%Y%m%d')}.txt",
+        mime="text/plain",
+        use_container_width=True
+    )
 
             # LÓGICA DE ORDEN (EXISTENTE)
             if st.session_state.confirmar_orden:
