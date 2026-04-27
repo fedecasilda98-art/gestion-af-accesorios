@@ -167,79 +167,76 @@ else:
 
     with tabs[1]: # LOTE
         st.header("🚚 Carga por Lote / Reposición de Stock")
-        st.info("Escribí los artículos abajo. Si el nombre coincide con uno existente, se SUMARÁ el stock y se ACTUALIZARÁN los precios.")
         
-        columnas_lote = ["Rubro", "Proveedor", "Accesorio", "Stock", "Costo Base", "Flete", "% Ganancia", "Descripcion"]
-        df_lote_nuevo = pd.DataFrame(columns=columnas_lote)
-        lote_editado = st.data_editor(df_lote_nuevo, num_rows="dynamic", use_container_width=True, key="lote_v_final_sincro")
+        col_carga, col_hist = st.tabs(["📥 Cargar Mercadería", "📜 Historial de Ingresos"])
         
-        if st.button("🚀 PROCESAR E INCORPORAR AL STOCK", type="primary"):
-            if lote_editado is not None and not lote_editado.empty:
-                validos = lote_editado[lote_editado["Accesorio"].astype(str).str.strip() != ""].copy()
-                
-                if not validos.empty:
-                    def limpiar_n(v):
-                        try: return float(str(v).replace('$', '').replace(',', '.').strip())
-                        except: return 0.0
-
-                    ingresos_log = [] # Para el registro de movimientos
+        with col_carga:
+            st.info("💡 Si el producto ya existe, se suma el stock y se actualiza el costo.")
+            columnas_lote = ["Rubro", "Proveedor", "Accesorio", "Stock", "Costo Base", "Flete", "% Ganancia", "Descripcion"]
+            lote_editado = st.data_editor(pd.DataFrame(columns=columnas_lote), num_rows="dynamic", use_container_width=True, key="editor_lote_final")
+            
+            if st.button("🚀 PROCESAR E INCORPORAR AL STOCK", type="primary"):
+                if lote_editado is not None and not lote_editado.empty:
+                    validos = lote_editado[lote_editado["Accesorio"].astype(str).str.strip() != ""].copy()
                     
-                    for _, r in validos.iterrows():
-                        nombre_acc = str(r["Accesorio"]).strip()
-                        cb = limpiar_n(r["Costo Base"])
-                        fl = limpiar_n(r["Flete"])
-                        ga = limpiar_n(r["% Ganancia"])
-                        stk_nuevo = limpiar_n(r["Stock"])
-                        
-                        # Cálculos de precios
-                        l1 = round((cb + fl) * (1 + ga/100), 2)
-                        l2 = round(l1 * 0.90, 2)
-                        
-                        # LÓGICA DE ACTUALIZACIÓN O CREACIÓN
-                        mask = df_stock["Accesorio"] == nombre_acc
-                        
-                        if mask.any():
-                            # El artículo ya existe: Sumamos stock y actualizamos precios
-                            df_stock.loc[mask, "Stock"] += stk_nuevo
-                            df_stock.loc[mask, "Costo Base"] = cb
-                            df_stock.loc[mask, "Flete"] = fl
-                            df_stock.loc[mask, "% Ganancia"] = ga
-                            df_stock.loc[mask, "Lista 1 (Cheques)"] = l1
-                            df_stock.loc[mask, "Lista 2 (Efectivo)"] = l2
-                            df_stock.loc[mask, "Rubro"] = str(r["Rubro"])
-                            df_stock.loc[mask, "Proveedor"] = str(r["Proveedor"])
-                            tipo_log = "REPOSICIÓN"
-                        else:
-                            # El artículo es nuevo: Lo agregamos al DataFrame
-                            nuevo_row = pd.DataFrame([{
-                                "Rubro": str(r["Rubro"]), "Proveedor": str(r["Proveedor"]),
-                                "Accesorio": nombre_acc, "Stock": stk_nuevo,
-                                "Costo Base": cb, "Flete": fl, "% Ganancia": ga,
-                                "Lista 1 (Cheques)": l1, "Lista 2 (Efectivo)": l2,
-                                "Descripcion": str(r["Descripcion"])
-                            }])
-                            df_stock = pd.concat([df_stock, nuevo_row], ignore_index=True)
-                            tipo_log = "NUEVO INGRESO"
+                    if not validos.empty:
+                        def limpiar_n(v):
+                            try: return float(str(v).replace('$', '').replace(',', '.').strip())
+                            except: return 0.0
 
-                        # Guardar para el historial global
-                        ingresos_log.append({
+                        detalle_para_historial = []
+                        costo_total_lote = 0
+                        
+                        for _, r in validos.iterrows():
+                            nombre = str(r["Accesorio"]).strip()
+                            stk_n = limpiar_n(r["Stock"])
+                            cb = limpiar_n(r["Costo Base"])
+                            fl = limpiar_n(r["Flete"])
+                            ga = limpiar_n(r["% Ganancia"])
+                            
+                            # Precios calculados
+                            l1 = round((cb + fl) * (1 + ga/100), 2)
+                            l2 = round(l1 * 0.90, 2)
+                            costo_total_lote += (stk_n * cb)
+
+                            # Guardar detalle detallado para el historial
+                            detalle_para_historial.append(f"{stk_n}x {nombre} (Costo: {formatear_moneda(cb)})")
+
+                            # Actualizar o Crear en df_stock
+                            mask = df_stock["Accesorio"] == nombre
+                            if mask.any():
+                                df_stock.loc[mask, "Stock"] += stk_n
+                                df_stock.loc[mask, ["Costo Base", "Flete", "% Ganancia", "Lista 1 (Cheques)", "Lista 2 (Efectivo)"]] = [cb, fl, ga, l1, l2]
+                            else:
+                                nueva_fila = pd.DataFrame([{"Rubro": r["Rubro"], "Proveedor": r["Proveedor"], "Accesorio": nombre, "Stock": stk_n, "Costo Base": cb, "Flete": fl, "% Ganancia": ga, "Lista 1 (Cheques)": l1, "Lista 2 (Efectivo)": l2, "Descripcion": r["Descripcion"]}])
+                                df_stock = pd.concat([df_stock, nueva_fila], ignore_index=True)
+
+                        # Guardar Stock
+                        df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
+
+                        # REGISTRO EN HISTORIAL DE LOTES
+                        nuevo_registro = pd.DataFrame([{
                             "Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                            "Cliente": "SOPORTE/PROVEEDOR",
-                            "Tipo": "INGRESO STOCK",
-                            "Monto": round(stk_nuevo * cb, 2), # Valor de lo que entró a costo
-                            "Metodo": tipo_log,
-                            "Detalle": f"Entraron {stk_nuevo} unidades de {nombre_acc}"
-                        })
+                            "Articulos": " | ".join(detalle_para_historial),
+                            "Costo Total Compra": round(costo_total_lote, 2)
+                        }])
+                        # Cargar el historial existente y sumarle el nuevo
+                        df_h_lotes = cargar_datos(ARCHIVO_REGISTRO_LOTES, COLS_REGISTRO_LOTES)
+                        pd.concat([df_h_lotes, nuevo_registro], ignore_index=True).to_csv(ARCHIVO_REGISTRO_LOTES, index=False)
+                        
+                        st.success("✅ Stock actualizado y registro guardado en el historial."); st.rerun()
 
-                    # Guardar cambios en archivos
-                    df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
-                    
-                    if ingresos_log:
-                        df_ingresos = pd.DataFrame(ingresos_log)
-                        df_movs = pd.concat([df_movs, df_ingresos], ignore_index=True)
-                        df_movs.to_csv(ARCHIVO_MOVIMIENTOS, index=False)
-                    
-                    st.success(f"✅ Procesados {len(validos)} artículos correctamente."); st.rerun()
+        with col_hist:
+            st.subheader("Registros de Ingresos de Mercadería")
+            df_ver_lotes = cargar_datos(ARCHIVO_REGISTRO_LOTES, COLS_REGISTRO_LOTES)
+            if not df_ver_lotes.empty:
+                for idx, row in df_ver_lotes.sort_index(ascending=False).iterrows():
+                    with st.expander(f"📦 Ingreso {row['Fecha']} - Inversión: {formatear_moneda(row['Costo Total Compra'])}"):
+                        items = row["Articulos"].split(" | ")
+                        for it in items:
+                            st.write(f"• {it}")
+            else:
+                st.info("No hay registros de ingresos todavía.")
     with tabs[2]: # MAESTRO
         st.header("⚙️ Maestro de Artículos")
         st.info("💡 Editá Costo, Flete o % Ganancia. Lista 1 se calcula sobre costo y Lista 2 es un 10% más barata.")
