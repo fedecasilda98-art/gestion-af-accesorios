@@ -18,7 +18,6 @@ ARCHIVO_CLIENTES = "data/clientes_base.csv"
 ARCHIVO_MOVIMIENTOS = "data/movimientos_clientes.csv"
 ARCHIVO_HISTORIAL_STOCK = "data/historial_stock.csv"
 CARPETA_FOTOS = "data/fotos_productos"
-WHATSAPP_NUM = "5493413512049"
 
 if not os.path.exists(CARPETA_FOTOS):
     os.makedirs(CARPETA_FOTOS)
@@ -52,6 +51,7 @@ if "carrito" not in st.session_state: st.session_state.carrito = []
 if "remito_items" not in st.session_state: st.session_state.remito_items = []
 if "confirmar_orden" not in st.session_state: st.session_state.confirmar_orden = False
 if "confirmar_nc" not in st.session_state: st.session_state.confirmar_nc = False
+if "pdf_a_descargar" not in st.session_state: st.session_state.pdf_a_descargar = None
 
 # --- UTILIDADES ---
 def formatear_moneda(valor):
@@ -87,7 +87,6 @@ def generar_pdf(cliente_nombre, items, total, df_clientes, titulo="DOCUMENTO"):
         pdf.cell(0, 7, f"FECHA: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True)
         pdf.ln(5)
         
-        # Tabla
         pdf.set_font("Helvetica", "B", 10)
         pdf.cell(100, 8, "Producto", 1)
         pdf.cell(20, 8, "Cant", 1, align="C")
@@ -96,7 +95,9 @@ def generar_pdf(cliente_nombre, items, total, df_clientes, titulo="DOCUMENTO"):
         
         pdf.set_font("Helvetica", "", 10)
         for item in items:
-            pdf.cell(100, 8, f" {item['Producto'][:45]}", 1)
+            # Limpiamos caracteres que no sean latin-1 para evitar errores
+            prod_nombre = str(item['Producto'])[:45].encode('latin-1', 'ignore').decode('latin-1')
+            pdf.cell(100, 8, f" {prod_nombre}", 1)
             pdf.cell(20, 8, str(item['Cant']), 1, align="C")
             pdf.cell(35, 8, formatear_moneda(item['Precio U.']), 1, align="R")
             pdf.cell(35, 8, formatear_moneda(item['Subtotal']), 1, align="R", ln=True)
@@ -106,13 +107,18 @@ def generar_pdf(cliente_nombre, items, total, df_clientes, titulo="DOCUMENTO"):
         pdf.cell(155, 10, "TOTAL: ", 0, align="R")
         pdf.cell(35, 10, formatear_moneda(total), 1, align="R")
         
-        return pdf.output(dest='S').encode('latin-1', 'replace')
+        # --- CORRECCIÓN AQUÍ ---
+        # El output 'S' ya devuelve bytes en fpdf2, no hace falta .encode()
+        resultado = pdf.output(dest='S')
+        if isinstance(resultado, str):
+            return resultado.encode('latin-1', 'replace')
+        return bytes(resultado)
     except Exception as e:
         st.error(f"Error generando PDF: {e}")
-        return b""
+        return None
 
 # --- INTERFAZ PRINCIPAL ---
-tabs = st.tabs(["📊 Stock", "🚚 Lote/Carga", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre", "📦 Remitos"])
+tabs = st.tabs(["📊 Stock", "🚚 Lote/Carga", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre", "📦 Remitos", "📂 Importar"])
 
 # --- TAB 0: STOCK ---
 with tabs[0]:
@@ -138,7 +144,6 @@ with tabs[1]:
             if st.button("Actualizar Stock Existente"):
                 df_stock.loc[df_stock["Accesorio"] == prod_ex, "Stock"] += cant_ex
                 df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
-                # Historial
                 nuevo_hist = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Accesorio": prod_ex, "Cantidad": cant_ex, "Tipo Operacion": "REPOSICIÓN", "Proveedor": "-"}])
                 pd.concat([df_hist_stock, nuevo_hist]).to_csv(ARCHIVO_HISTORIAL_STOCK, index=False)
                 st.success("Stock actualizado correctamente"); st.rerun()
@@ -158,7 +163,6 @@ with tabs[1]:
                     l2 = round(l1 * 0.9, 2)
                     nuevo_item = pd.DataFrame([{"Rubro": n_rubro, "Proveedor": n_prov, "Accesorio": n_acc, "Stock": n_stock, "Costo Base": n_costo, "Flete": n_flete, "% Ganancia": n_gan, "Lista 1 (Cheques)": l1, "Lista 2 (Efectivo)": l2, "Descripcion": ""}])
                     pd.concat([df_stock, nuevo_item]).to_csv(ARCHIVO_ARTICULOS, index=False)
-                    # Historial
                     nuevo_hist = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Accesorio": n_acc, "Cantidad": n_stock, "Tipo Operacion": "ALTA NUEVA", "Proveedor": n_prov}])
                     pd.concat([df_hist_stock, nuevo_hist]).to_csv(ARCHIVO_HISTORIAL_STOCK, index=False)
                     st.success("Producto creado e incorporado"); st.rerun()
@@ -191,7 +195,6 @@ with tabs[3]:
             with st.expander("Registrar Nuevo Pago"):
                 monto_p = st.number_input("Monto a pagar $:", min_value=0.0)
                 metodo_p = st.selectbox("Método de Pago:", ["Efectivo", "Transferencia", "Cheque Físico", "eCheq"])
-                det_pago = ""
                 if "Cheque" in metodo_p or "eCheq" in metodo_p:
                     c_num = st.text_input("Número de Cheque")
                     c_banco = st.text_input("Banco")
@@ -209,31 +212,9 @@ with tabs[3]:
         else:
             st.info("No hay clientes cargados.")
 
-    with sub_cta[1]:
-        col_c1, col_c2 = st.columns(2)
-        with col_c1:
-            st.subheader("Nuevo Cliente")
-            with st.form("f_nuevo_cli"):
-                nc_nom = st.text_input("Nombre Completo")
-                nc_tel = st.text_input("Teléfono")
-                nc_loc = st.text_input("Localidad")
-                nc_dir = st.text_input("Dirección")
-                if st.form_submit_button("Guardar Cliente"):
-                    n_cli = pd.DataFrame([{"Nombre": nc_nom, "Tel": nc_tel, "Localidad": nc_loc, "Direccion": nc_dir, "Saldo": 0.0}])
-                    pd.concat([df_clientes, n_cli]).to_csv(ARCHIVO_CLIENTES, index=False)
-                    st.success("Cliente guardado"); st.rerun()
-        with col_c2:
-            st.subheader("Modificar / Eliminar")
-            if not df_clientes.empty:
-                cli_mod = st.selectbox("Cliente a editar:", df_clientes["Nombre"].tolist())
-                if st.button("🗑️ Eliminar Cliente"):
-                    df_clientes = df_clientes[df_clientes["Nombre"] != cli_mod]
-                    df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
-                    st.error("Cliente eliminado"); st.rerun()
-
 # --- TAB 4: PRESUPUESTADOR ---
 with tabs[4]:
-    st.header("📄 Presupuestador")
+    st.header("📄 Presupuestador y Ventas")
     cli_pres = st.selectbox("Cliente:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cli_pres")
     
     col_p1, col_p2, col_p3 = st.columns([2,1,1])
@@ -253,14 +234,18 @@ with tabs[4]:
         
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            pdf_data = generar_pdf(cli_pres, st.session_state.carrito, t_final, df_clientes, "PRESUPUESTO")
-            st.download_button("📥 Descargar PDF", pdf_data, f"Presupuesto_{cli_pres}.pdf", "application/pdf")
+            pdf_pres = generar_pdf(cli_pres, st.session_state.carrito, t_final, df_clientes, "PRESUPUESTO")
+            if pdf_pres:
+                st.download_button("📥 Bajar Presupuesto", pdf_pres, f"Presupuesto_{cli_pres}.pdf", "application/pdf")
         with c2:
             if st.button("✅ Generar Orden"): st.session_state.confirmar_orden = True
         with c3:
             if st.button("🔵 Nota de Crédito"): st.session_state.confirmar_nc = True
         with c4:
-            if st.button("🗑️ Limpiar"): st.session_state.carrito = []; st.rerun()
+            if st.button("🗑️ Limpiar"): 
+                st.session_state.carrito = []
+                st.session_state.pdf_a_descargar = None
+                st.rerun()
 
         if st.session_state.confirmar_orden:
             st.warning(f"¿Confirmar Orden para {cli_pres}?")
@@ -269,14 +254,15 @@ with tabs[4]:
                     df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] -= item["Cant"]
                 if cli_pres != "Consumidor Final":
                     df_clientes.loc[df_clientes["Nombre"] == cli_pres, "Saldo"] += t_final
-                
                 det = ", ".join([f"{i['Cant']}x {i['Producto']}" for i in st.session_state.carrito])
                 n_mov = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_pres, "Tipo": "VENTA", "Monto": t_final, "Metodo": "-", "Detalle": det}])
-                
+                st.session_state.pdf_a_descargar = generar_pdf(cli_pres, st.session_state.carrito, t_final, df_clientes, "ORDEN DE VENTA")
                 df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
                 df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
                 pd.concat([df_movs, n_mov]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
-                st.session_state.carrito = []; st.session_state.confirmar_orden = False; st.success("Orden procesada"); st.rerun()
+                st.session_state.carrito = []
+                st.session_state.confirmar_orden = False
+                st.success("Orden procesada")
 
         if st.session_state.confirmar_nc:
             st.error(f"¿Confirmar Nota de Crédito (Devolución) para {cli_pres}?")
@@ -285,13 +271,17 @@ with tabs[4]:
                     df_stock.loc[df_stock["Accesorio"] == item["Producto"], "Stock"] += item["Cant"]
                 if cli_pres != "Consumidor Final":
                     df_clientes.loc[df_clientes["Nombre"] == cli_pres, "Saldo"] -= t_final
-                
                 n_mov = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": cli_pres, "Tipo": "N. CRÉDITO", "Monto": t_final, "Metodo": "-", "Detalle": "Devolución de productos"}])
-                
+                st.session_state.pdf_a_descargar = generar_pdf(cli_pres, st.session_state.carrito, t_final, df_clientes, "NOTA DE CREDITO")
                 df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
                 df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
                 pd.concat([df_movs, n_mov]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
-                st.session_state.carrito = []; st.session_state.confirmar_nc = False; st.success("NC Procesada"); st.rerun()
+                st.session_state.carrito = []
+                st.session_state.confirmar_nc = False
+                st.success("Nota de Crédito procesada")
+
+        if st.session_state.pdf_a_descargar:
+            st.download_button("📥 DESCARGAR COMPROBANTE GENERADO", st.session_state.pdf_a_descargar, f"Comprobante_{cli_pres}.pdf", "application/pdf")
 
 # --- TAB 5: ÓRDENES ---
 with tabs[5]:
@@ -310,10 +300,9 @@ with tabs[6]:
     cheques = df_movs[df_movs["Metodo"].str.contains("Cheque|eCheq", na=False)]
     st.dataframe(cheques, use_container_width=True)
 
-# --- TAB 7: REMITOS ---
 with tabs[7]:
     st.header("📦 Generador de Remitos")
-    cli_rem = st.selectbox("Cliente para Remito:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"])
+    cli_rem = st.selectbox("Cliente para Remito:", df_clientes["Nombre"].tolist() if not df_clientes.empty else ["Consumidor Final"], key="cli_rem_box")
     r1, r2 = st.columns([3, 1])
     with r1: item_r = st.selectbox("Producto a enviar:", df_stock["Accesorio"].tolist(), key="item_r")
     with r2: cant_r = st.number_input("Cant:", min_value=1, value=1, key="cant_r")
@@ -323,10 +312,17 @@ with tabs[7]:
         st.rerun()
     
     if st.session_state.remito_items:
-        st.write("Artículos en remito:")
         st.table(st.session_state.remito_items)
-        if st.button("Descargar Remito PDF"):
+        if st.button("Generar Remito PDF"):
             pdf_rem = generar_pdf(cli_rem, st.session_state.remito_items, 0, df_clientes, "REMITO DE ENTREGA")
-            st.download_button("📥 Bajar Remito", pdf_rem, f"Remito_{cli_rem}.pdf", "application/pdf")
+            if pdf_rem:
+                st.session_state.pdf_remito = pdf_rem
+                st.success("PDF de remito generado correctamente.")
+            
+        if "pdf_remito" in st.session_state:
+            st.download_button("📥 DESCARGAR REMITO", st.session_state.pdf_remito, f"Remito_{cli_rem}.pdf", "application/pdf")
+
         if st.button("Limpiar Remito"):
-            st.session_state.remito_items = []; st.rerun()
+            st.session_state.remito_items = []
+            if "pdf_remito" in st.session_state: del st.session_state.pdf_remito
+            st.rerun()
