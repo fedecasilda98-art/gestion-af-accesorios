@@ -184,7 +184,7 @@ with tabs[1]: # 🚚 LOTE
             if nuevo_costo > 0:
                 df_stock.at[idx, "Costo Base"] = nuevo_costo
                 flete = df_stock.at[idx, "Flete"]
-                ganancia = df_stock.at[idx, "% Ganancia"]
+                 ganancia = df_stock.at[idx, "% Ganancia"]
                 l1 = (nuevo_costo + flete) * (1 + ganancia / 100)
                 df_stock.at[idx, "Lista 1 (Cheques)"] = round(l1, 2)
                 df_stock.at[idx, "Lista 2 (Efectivo)"] = round(l1 * 0.90, 2)
@@ -354,7 +354,7 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
                 st.session_state.carrito_pagos = []
 
             # --- SECCIÓN DE PAGOS (MULTIMÉTODO TIPO CARRITO) ---
-            st.subheader("Registrar Pago / Entrega Múltiple")
+                st.subheader("Registrar Pago / Entrega Múltiple")
             
             with st.container(border=True):
                 st.markdown("##### ➕ Añadir Línea de Cobro")
