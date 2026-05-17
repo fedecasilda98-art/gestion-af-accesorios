@@ -353,32 +353,37 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
             if "carrito_pagos" not in st.session_state:
                 st.session_state.carrito_pagos = []
 
-            # --- SECCIÓN DE PAGOS (MULTIMÉTODO TIPO CARRITO CORREGIDO) ---
+            # --- SECCIÓN DE PAGOS (SOLUCIÓN DEFINITIVA A DUPLICACIÓN Y ERROR DE KEY) ---
             st.subheader("Registrar Pago / Entrega Múltiple")
             
+            # Truco legal para resetear el formulario sin romper el session_state
+            if "pago_reset_trigger" not in st.session_state:
+                st.session_state.pago_reset_trigger = 0
+
             with st.container(border=True):
                 st.markdown("##### ➕ Añadir Línea de Cobro")
                 f1, f2, f3 = st.columns([1.5, 1.5, 1])
                 with f1:
-                    forma_p = st.selectbox("Forma de Pago:", ["Efectivo", "Transferencia", "Cheque", "Echeq"], key="multi_forma_p")
+                    forma_p = st.selectbox("Forma de Pago:", ["Efectivo", "Transferencia", "Cheque", "Echeq"], key=f"multi_forma_p_{st.session_state.pago_reset_trigger}")
                 with f2:
-                    monto_p = st.number_input("Monto $:", min_value=0.0, format="%.2f", key="multi_monto_p")
+                    # Le sumamos el trigger a la key para que al cambiar, limpie el casillero a 0.00 de verdad
+                    monto_p = st.number_input("Monto $:", min_value=0.0, format="%.2f", key=f"multi_monto_p_{st.session_state.pago_reset_trigger}")
                 with f3:
-                    fecha_p = st.date_input("Fecha de cobro:", datetime.now(), key="multi_fecha_p")
+                    fecha_p = st.date_input("Fecha de cobro:", datetime.now(), key=f"multi_fecha_p_{st.session_state.pago_reset_trigger}")
                 
                 # Despliegue dinámico de campos según el método
                 detalles_item = ""
                 if forma_p in ["Cheque", "Echeq"]:
                     st.markdown("**📝 Detalles del Título:**")
                     d1, d2, d3 = st.columns(3)
-                    n_cheque = d1.text_input("Número de Cheque / Echeq", key="multi_n_cheque")
-                    b_cheque = d2.text_input("Banco", key="multi_b_cheque")
-                    v_cheque = d3.date_input("Vencimiento", key="multi_v_cheque")
+                    n_cheque = d1.text_input("Número de Cheque / Echeq", key=f"multi_n_cheque_{st.session_state.pago_reset_trigger}")
+                    b_cheque = d2.text_input("Banco", key=f"multi_b_cheque_{st.session_state.pago_reset_trigger}")
+                    v_cheque = d3.date_input("Vencimiento", key=f"multi_v_cheque_{st.session_state.pago_reset_trigger}")
                     
                     if n_cheque and b_cheque:
                         detalles_item = f"{forma_p} N°{n_cheque} - {b_cheque} (Vto: {v_cheque.strftime('%d/%m/%Y')})"
                 else:
-                    nota_p = st.text_input("Nota adicional / Referencia (opcional):", key="multi_nota")
+                    nota_p = st.text_input("Nota adicional / Referencia (opcional):", key=f"multi_nota_{st.session_state.pago_reset_trigger}")
                     if nota_p:
                         detalles_item = f"{forma_p} - {nota_p}"
                     else:
@@ -391,21 +396,20 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
                     elif forma_p in ["Cheque", "Echeq"] and (not n_cheque or not b_cheque):
                         st.error("Por favor, completá el número y el banco del cheque antes de añadirlo.")
                     else:
-                        # Añadimos de forma segura al carrito local
+                        # Guardamos el valor estático convirtiéndolo a float puro, 
+                        # así rompe cualquier lazo con lo que quede escrito en pantalla.
+                        monto_estatico = float(monto_p)
+                        
                         st.session_state.carrito_pagos.append({
                             "Forma": forma_p,
-                            "Monto": float(monto_p),
+                            "Monto": monto_estatico,
                             "Fecha": fecha_p.strftime("%d/%m/%Y"),
                             "Detalle": detalles_item
                         })
                         
-                        # --- LIMPIEZA DE MEMORIA INMEDIATA ---
-                        # Reseteamos los valores en st.session_state para que la próxima línea no arrastre datos viejos
-                        st.session_state["multi_monto_p"] = 0.0
-                        if "multi_nota" in st.session_state: st.session_state["multi_nota"] = ""
-                        if "multi_n_cheque" in st.session_state: st.session_state["multi_n_cheque"] = ""
-                        if "multi_b_cheque" in st.session_state: st.session_state["multi_b_cheque"] = ""
-                        
+                        # Cambiamos el trigger: esto hace que Streamlit rompa los componentes viejos,
+                        # limpie los textos y cree unos campos totalmente limpios y en cero.
+                        st.session_state.pago_reset_trigger += 1
                         st.rerun()
 
             # --- GRILLA VISUAL DEL DETALLE CARGADO ---
