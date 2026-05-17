@@ -178,6 +178,10 @@ with tabs[1]: # 🚚 LOTE
         if st.button("➕ Confirmar Ingreso de Stock", use_container_width=True):
             idx = df_stock[df_stock["Accesorio"] == prod_repo].index[0]
             df_stock.at[idx, "Stock"] += cant_repo
+            
+            # Guardamos el costo para registrar en el historial (el nuevo o el que ya tenía)
+            costo_registro = nuevo_costo if nuevo_costo > 0 else float(df_stock.at[idx, "Costo Base"])
+            
             if nuevo_costo > 0:
                 df_stock.at[idx, "Costo Base"] = nuevo_costo
                 flete = df_stock.at[idx, "Flete"]
@@ -187,6 +191,18 @@ with tabs[1]: # 🚚 LOTE
                 df_stock.at[idx, "Lista 2 (Efectivo)"] = round(l1 * 0.90, 2)
             
             df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
+            
+            # --- REGISTRO EN HISTORIAL DE CARGAS (UNIFICADO) ---
+            n_carga = pd.DataFrame([{
+                "Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                "Cliente": "INTERNO (LOGÍSTICA)",
+                "Tipo": "INGRESO STOCK",
+                "Monto": costo_registro,
+                "Metodo": f"Cant: {cant_repo}",
+                "Detalle": f"Reposición: {prod_repo}"
+            }])
+            pd.concat([df_movs, n_carga]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
+            
             st.success(f"Stock actualizado: {prod_repo}")
             st.rerun()
 
@@ -228,8 +244,44 @@ with tabs[1]: # 🚚 LOTE
                     }
                     df_stock = pd.concat([df_stock, pd.DataFrame([nuevo_item])], ignore_index=True)
                     df_stock.to_csv(ARCHIVO_ARTICULOS, index=False)
+                    
+                    # --- REGISTRO EN HISTORIAL DE CARGAS (UNIFICADO) ---
+                    n_alta = pd.DataFrame([{
+                        "Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                        "Cliente": "INTERNO (LOGÍSTICA)",
+                        "Tipo": "ALTA PROD",
+                        "Monto": n_costo,
+                        "Metodo": f"Cant Inicial: {n_stock}",
+                        "Detalle": f"Producto Nuevo: {n_acc}"
+                    }])
+                    pd.concat([df_movs, n_alta]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
+                    
                     st.success(f"Producto {n_acc} creado.")
                     st.rerun()
+
+    # --- NUEVA SECCIÓN: GRILLA DE HISTORIAL EN LOTE ---
+    st.markdown("---")
+    st.subheader("📋 Historial de Cargas Realizadas")
+    
+    # Filtramos para que en esta pestaña solo se listen las acciones logísticas
+    historial_cargas = df_movs[df_movs["Tipo"].isin(["INGRESO STOCK", "ALTA PROD"])].copy()
+    
+    if not historial_cargas.empty:
+        # Mostramos los ingresos más recientes arriba de todo
+        historial_cargas = historial_cargas.sort_index(ascending=False)
+        
+        # Armamos un formato limpio para leer rápido en pantalla
+        vista_cargas = pd.DataFrame({
+            "Fecha y Hora": historial_cargas["Fecha"],
+            "Tipo Movimiento": historial_cargas["Tipo"],
+            "Artículo / Accesorio": historial_cargas["Detalle"],
+            "Cantidad Registrada": historial_cargas["Metodo"],
+            "Costo Base ($)": historial_cargas["Monto"].apply(formatear_moneda)
+        })
+        
+        st.dataframe(vista_cargas, use_container_width=True, hide_index=True)
+    else:
+        st.info("No se registran movimientos de carga o reabastecimiento en este período.")
 
 with tabs[2]: # ⚙️ MAESTRO
     st.header("⚙️ Maestro de Artículos")
@@ -341,14 +393,16 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
                         st.success(f"Pago registrado para {cli_sel}")
                         st.rerun()
 
-            # --- HISTORIAL ESPECÍFICO Y RE-DESCARGA ---
+# --- HISTORIAL ESPECÍFICO Y RE-DESCARGA (CON ELIMINACIÓN SEGURA) ---
             st.subheader(f"Movimientos de {cli_sel}")
             historial_cli = df_movs[df_movs["Cliente"] == cli_sel].sort_index(ascending=False)
             
             if not historial_cli.empty:
                 for i, row in historial_cli.iterrows():
                     with st.container(border=True):
-                        col_info, col_btn = st.columns([4, 1])
+                        # Dividimos en 3 columnas para sumarle el botón de borrar al final
+                        col_info, col_btn, col_del = st.columns([3, 1, 1])
+                        
                         with col_info:
                             st.write(f"**{row['Fecha']}** | {row['Tipo']} | **{formatear_moneda(row['Monto'])}**")
                             st.caption(f"Método: {row['Metodo']} | Detalle: {row['Detalle']}")
@@ -356,10 +410,50 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
                         with col_btn:
                             # Lógica de re-descarga según el tipo de movimiento
                             if row['Tipo'] in ["VENTA", "N. CRÉDITO"]:
-                                # Simulamos los items para el PDF (puedes ajustar esto si guardas los carritos en archivos)
                                 items_fake = [{"Producto": row['Detalle'], "Cant": 1, "Precio U.": row['Monto'], "Subtotal": row['Monto']}]
                                 pdf_data = generar_pdf_binario(cli_sel, items_fake, row['Monto'], df_clientes, row['Tipo'], row['Fecha'])
-                                st.download_button("📥 PDF", pdf_data, f"{row['Tipo']}_{i}.pdf", key=f"re_down_{i}")
+                                st.download_button("📥 PDF", pdf_data, f"{row['Tipo']}_{i}.pdf", key=f"re_down_{i}", use_container_width=True)
+                        
+                        with col_del:
+                            # Botón para activar la alerta de este movimiento específico
+                            if st.button("🗑️ BORRAR", key=f"btn_pre_del_{i}", use_container_width=True):
+                                st.session_state[f"confirmar_borrado_{i}"] = True
+
+                        # --- CARTEL DE ALERTA (MARGEN DE ERROR) ---
+                        if st.session_state.get(f"confirmar_borrado_{i}", False):
+                            st.markdown("---")
+                            st.warning(f"⚠️ **¿Estás seguro de eliminar este movimiento de {formatear_moneda(row['Monto'])}?** Esta acción afectará el saldo actual del cliente y no se puede deshacer.")
+                            
+                            cb1, cb2 = st.columns(2)
+                            with cb1:
+                                if st.button("🔥 Sí, eliminar permanente", key=f"btn_del_conf_{i}", use_container_width=True):
+                                    # 1. Revertir el saldo en el archivo/DataFrame de clientes antes de borrar el registro
+                                    idx_c = df_clientes[df_clientes["Nombre"] == cli_sel].index[0]
+                                    monto_mov = float(row['Monto'])
+                                    
+                                    if row['Tipo'] == "PAGO":
+                                        df_clientes.at[idx_c, "Saldo"] += monto_mov  # Si elimino un pago, vuelve a deber esa plata
+                                    elif row['Tipo'] == "VENTA":
+                                        df_clientes.at[idx_c, "Saldo"] -= monto_mov  # Si elimino una venta, le descuento el cargo
+                                    elif row['Tipo'] == "N. CRÉDITO":
+                                        df_clientes.at[idx_c, "Saldo"] += monto_mov  # Si elimino una nota de crédito, vuelve a cargarse la deuda
+                                    
+                                    # 2. Quitar la fila de movimientos usando su índice original
+                                    df_movs = df_movs.drop(i)
+                                    
+                                    # 3. Guardar cambios en los dos archivos CSV de forma inmediata
+                                    df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
+                                    df_movs.to_csv(ARCHIVO_MOVIMIENTOS, index=False)
+                                    
+                                    # Limpiar estado y refrescar interfaz
+                                    st.session_state[f"confirmar_borrado_{i}"] = False
+                                    st.success("Movimiento eliminado con éxito.")
+                                    st.rerun()
+                            
+                            with cb2:
+                                if st.button("❌ Cancelar", key=f"btn_del_canc_{i}", use_container_width=True):
+                                    st.session_state[f"confirmar_borrado_{i}"] = False
+                                    st.rerun()
             else:
                 st.info("No hay movimientos registrados para este cliente.")
 
@@ -392,7 +486,6 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
             st.success("Cambios guardados"); st.rerun()
             
         if c_btn2.button("🗑️ Eliminar Cliente Seleccionado"):
-            # Lógica para eliminar el que esté seleccionado en el selectbox de arriba
             df_clientes = df_clientes[df_clientes["Nombre"] != cli_sel]
             df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
             st.error(f"Cliente {cli_sel} eliminado"); st.rerun()
@@ -423,7 +516,31 @@ with tabs[4]: # 📄 PRESUPUESTADOR (CON OPCIÓN DE IMPRESIÓN)
         st.rerun()
 
     if st.session_state.carrito:
-        st.table(st.session_state.carrito)
+        st.subheader("Artículos en el Presupuesto Actual")
+        
+        # Encabezados de la tabla visual
+        eh1, eh2, eh3, eh4, eh5 = st.columns([3, 1, 1, 1, 0.5])
+        eh1.markdown("**Artículo**")
+        eh2.markdown("**Cant.**")
+        eh3.markdown("**P. Unit**")
+        eh4.markdown("**Subtotal**")
+        eh5.markdown("") 
+        
+        # Dibujamos renglón por renglón con la cruz para borrar
+        for idx, item in enumerate(st.session_state.carrito):
+            with st.container(border=True):
+                col_prod, col_cant, col_unit, col_sub, col_del = st.columns([3, 1, 1, 1, 0.5])
+                
+                col_prod.write(item["Producto"])
+                col_cant.write(str(item["Cant"]))
+                col_unit.write(formatear_moneda(item["Precio U."]))
+                col_sub.write(formatear_moneda(item["Subtotal"]))
+                
+                # El botón de la cruz para sacar este accesorio específico
+                if col_del.button("❌", key=f"quitar_item_v2_{idx}", help="Quitar este artículo"):
+                    st.session_state.carrito.pop(idx)
+                    st.rerun()
+                    
         total_f = sum(item["Subtotal"] for item in st.session_state.carrito)
         st.write(f"### TOTAL: {formatear_moneda(total_f)}")
         
@@ -501,7 +618,7 @@ with tabs[4]: # 📄 PRESUPUESTADOR (CON OPCIÓN DE IMPRESIÓN)
                 pd.concat([df_movs, n_nc]).to_csv(ARCHIVO_MOVIMIENTOS, index=False)
                 
                 st.session_state.confirmar_nc = True # Flag para mostrar descarga
-                st.warning("Nota de Crédito procesada")
+                st.warning("Nota de Crédito processed")
 
             if st.session_state.get('confirmar_nc', False):
                 pdf_nc = generar_pdf_binario(cli_p, st.session_state.carrito, total_f, df_clientes, "NOTA DE CRÉDITO")
