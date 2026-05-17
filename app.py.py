@@ -822,63 +822,152 @@ with tabs[6]: # 🏁 CIERRE (FINANZAS Y CAPITAL)
     else:
         st.write("No se registraron movimientos de caja en el día de la fecha.")
 
-with tabs[7]: # 📦 REMITOS (ESTILO PRESUPUESTADOR)
-    st.header("📦 Generador de Remitos")
+with tabs[7]: # 📦 REMITOS (REDISEÑADO CON SUBDIVISIÓN PARA TRANSPORTE)
+    st.header("📦 Gestión y Emisión de Remitos")
     
-    # 1. Selección de Cliente
-    cli_r = st.selectbox(
-        "Seleccionar Cliente para el Remito:", 
-        df_clientes["Nombre"].tolist() if not df_clientes.empty else ["C. Final"], 
-        key="cli_remito_final"
-    )
+    # Creamos las sub-pestañas internas dentro de la pestaña de Remitos
+    sub_remito_tradicional, sub_remito_transporte = st.tabs(["📄 Remito Tradicional (Productos)", "🚚 Remito para Transporte"])
     
-    # 2. Selección de Productos (Igual a presupuestos pero sin elección de Lista)
-    r1, r2 = st.columns([3, 1])
-    with r1:
-        i_r = st.selectbox("Articulo para el Remito:", df_stock["Accesorio"].tolist(), key="item_remito_final")
-    with r2:
-        q_r = st.number_input("Cantidad:", min_value=1, value=1, key="cant_remito_final")
-    
-    if st.button("➕ AGREGAR AL REMITO", use_container_width=True):
-        # En el remito solo nos interesa Producto y Cantidad
-        st.session_state.remito_items.append({
-            "Producto": i_r,
-            "Cant": q_r,
-            "Precio U.": 0, # No se muestra en remito
-            "Subtotal": 0   # No se muestra en remito
-        })
-        st.rerun()
+    # Inicializamos la lista de ítems tradicional si no existe en la memoria
+    if "remito_items" not in st.session_state:
+        st.session_state.remito_items = []
 
-    # 3. Visualización y Descarga
-    if st.session_state.remito_items:
-        st.subheader("Items en el Remito Actual")
-        # Mostrar tabla simple
-        df_remito_vista = pd.DataFrame(st.session_state.remito_items)[["Producto", "Cant"]]
-        st.table(df_remito_vista)
+    # =========================================================================
+    # SUB-PESTAÑA 1: REMITO TRADICIONAL
+    # =========================================================================
+    with sub_remito_tradicional:
+        st.subheader("📄 Generador de Remito Tradicional de Entrega")
         
-        st.markdown("---")
-        rd1, rd2 = st.columns(2)
+        # 1. Selección de Cliente
+        cli_r = st.selectbox(
+            "Seleccionar Cliente para el Remito:", 
+            df_clientes["Nombre"].tolist() if not df_clientes.empty else ["C. Final"], 
+            key="cli_remito_final"
+        )
         
-        with rd1:
-            # Generar PDF (Usamos el título REMITO para que la función PDF oculte los precios)
-            pdf_remito = generar_pdf_binario(
-                cli_r, 
-                st.session_state.remito_items, 
-                0, 
-                df_clientes, 
-                titulo="REMITO DE ENTREGA"
-            )
-            st.download_button(
-                label="📥 DESCARGAR REMITO",
-                data=pdf_remito,
-                file_name=f"Remito_{cli_r}_{datetime.now().strftime('%d_%m')}.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
-            
-        with rd2:
-            if st.button("🗑️ LIMPIAR REMITO", use_container_width=True):
-                st.session_state.remito_items = []
+        # 2. Selección de Productos (Estilo presupuestador)
+        r1, r2 = st.columns([3, 1])
+        with r1:
+            i_r = st.selectbox("Artículo para el Remito:", df_stock["Accesorio"].tolist() if not df_stock.empty else [], key="item_remito_final")
+        with r2:
+            q_r = st.number_input("Cantidad:", min_value=1, value=1, key="cant_remito_final")
+        
+        if st.button("➕ AGREGAR AL REMITO TRADICIONAL", use_container_width=True):
+            if i_r:
+                # Guardamos en la lista temporal de ítems del remito
+                st.session_state.remito_items.append({
+                    "Producto": i_r,
+                    "Cant": q_r,
+                    "Precio U.": 0, # No se muestra en el remito impreso
+                    "Subtotal": 0   # No se muestra en el remito impreso
+                })
                 st.rerun()
+
+        # 3. Visualización, Desglose y Descarga del Remito Tradicional
+        if st.session_state.remito_items:
+            st.markdown("---")
+            st.markdown("##### 📝 Items en el Remito Actual")
+            
+            # Encabezados de tabla interactiva
+            th_r1, th_r2, th_r3 = st.columns([4, 1.5, 0.5])
+            th_r1.markdown("**Producto / Accesorio**")
+            th_r2.markdown("**Cantidad**")
+            th_r3.markdown("")
+            
+            # Dibujamos cada ítem cargado con opción de borrado individual
+            for idx_r, item_r in enumerate(st.session_state.remito_items):
+                with st.container(border=True):
+                    col_rp, col_rc, col_rx = st.columns([4, 1.5, 0.5])
+                    col_rp.write(item_r["Producto"])
+                    col_rc.write(f"{item_r['Cant']} unidad(es)")
+                    
+                    # Botón de cruz para remover un ítem mal cargado antes de generar el PDF
+                    if col_rx.button("❌", key=f"del_remito_item_{idx_r}", help="Eliminar artículo"):
+                        st.session_state.remito_items.pop(idx_r)
+                        st.rerun()
+            
+            st.markdown("---")
+            rd1, rd2 = st.columns(2)
+            
+            with rd1:
+                # Generar PDF (Usamos el título REMITO para que la función PDF oculte los precios)
+                pdf_remito = generar_pdf_binario(
+                    cli_r, 
+                    st.session_state.remito_items, 
+                    0, 
+                    df_clientes, 
+                    titulo="REMITO DE ENTREGA"
+                )
+                st.download_button(
+                    label="📥 EMITIR Y DESCARGAR REMITO",
+                    data=pdf_remito,
+                    file_name=f"Remito_{cli_r.replace(' ', '_')}_{datetime.now().strftime('%d_%m')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    key="btn_descarga_remito_trad"
+                )
                 
-        st.info("Nota: El remito no afecta saldos de cuenta corriente ni stock automáticamente (usar la pestaña de Ventas para eso).")
+            with rd2:
+                if st.button("🗑️ LIMPIAR TODO EL REMITO", use_container_width=True):
+                    st.session_state.remito_items = []
+                    st.rerun()
+                    
+            st.info("💡 Nota: El remito no afecta saldos de cuenta corriente ni stock automáticamente (usar la pestaña de Ventas para eso).")
+
+    # =========================================================================
+    # SUB-PESTAÑA 2: REMITO PARA TRANSPORTE / TERCEROS
+    # =========================================================================
+    with sub_remito_transporte:
+        st.subheader("🚚 Generador de Remito de Despacho para Transporte")
+        
+        # Inicializamos el trigger de reseteo exclusivo para el formulario de transporte
+        if "transporte_reset_trigger" not in st.session_state:
+            st.session_state.transporte_reset_trigger = 0
+            
+        cli_lista = df_clientes["Nombre"].tolist() if not df_clientes.empty else ["C. Final"]
+        trig = st.session_state.transporte_reset_trigger
+        
+        with st.container(border=True):
+            st.markdown("##### 📝 Datos logísticos del Envío")
+            
+            c_tra1, c_tra2 = st.columns(2)
+            with c_tra1:
+                cli_transporte = st.selectbox("Cliente Destinatario:", cli_lista, key=f"tra_cli_{trig}")
+                nombre_transporte = st.text_input("Empresa de Transporte / Expreso / Comisionista:", placeholder="Ej: Expreso Lancioni, Transporte Don Pedro, etc.", key=f"tra_nombre_{trig}")
+            
+            with c_tra2:
+                fecha_transporte = st.date_input("Fecha de Despacho:", datetime.now(), key=f"tra_fecha_{trig}")
+                obs_transporte = st.text_input("Observaciones de la Entrega (opcional):", placeholder="Ej: Retira Carlos / Entregar por la tarde", key=f"tra_obs_{trig}")
+            
+            st.markdown("---")
+            st.markdown("##### 📦 Detalles de la Carga")
+            d_tra1, d_tra2, d_tra3 = st.columns(3)
+            
+            with d_tra1:
+                cant_bultos = d_tra1.number_input("Cantidad de Bultos:", min_value=1, step=1, key=f"tra_bultos_{trig}")
+            with d_tra2:
+                peso_total = d_tra2.number_input("Peso Total Estimado (Kg):", min_value=0.0, format="%.2f", help="Peso acumulado aproximado de los bultos", key=f"tra_peso_{trig}")
+            with d_tra3:
+                valor_bulto = d_tra3.number_input("Valor Declarado Total ($):", min_value=0.0, format="%.2f", help="Valor asegurado de la mercadería para el transporte", key=f"tra_valor_{trig}")
+
+            # Botón de acción para procesar el remito de transporte
+            if st.button("🚀 GENERAR REMITO DE TRANSPORTE", use_container_width=True, type="primary"):
+                if not nombre_transporte:
+                    st.error("Por favor, ingresá el nombre de la empresa de transporte o comisionista.")
+                else:
+                    # Estructuramos la información para la función maestra binaria del PDF
+                    # Convertimos los inputs dinámicos a valores fijos estáticos
+                    bultos_fijos = int(cant_bultos)
+                    peso_fijo = float(peso_total)
+                    valor_fijo = float(valor_bulto)
+                    
+                    items_transporte = [
+                        {
+                            "Producto": f"BULTOS DE MERCADERÍA\n- Cantidad: {bultos_fijos} bulto(s)\n- Peso Aprox: {peso_fijo} Kg\n- Empresa/Expreso: {nombre_transporte}",
+                            "Cant": bultos_fijos,
+                            "Subtotal": valor_fijo  # Pasamos el valor declarado como "subtotal" para que figure en la planilla del seguro
+                        }
+                    ]
+                    
+                    if obs_transporte:
+                        items_transporte
