@@ -353,8 +353,8 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
             if "carrito_pagos" not in st.session_state:
                 st.session_state.carrito_pagos = []
 
-            # --- SECCIÓN DE PAGOS (MULTIMÉTODO TIPO CARRITO) ---
-                st.subheader("Registrar Pago / Entrega Múltiple")
+            # --- SECCIÓN DE PAGOS (MULTIMÉTODO TIPO CARRITO CORREGIDO) ---
+            st.subheader("Registrar Pago / Entrega Múltiple")
             
             with st.container(border=True):
                 st.markdown("##### ➕ Añadir Línea de Cobro")
@@ -366,7 +366,7 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
                 with f3:
                     fecha_p = st.date_input("Fecha de cobro:", datetime.now(), key="multi_fecha_p")
                 
-                # Despliegue dinámico de campos si el método requiere tracking de valores (cheques)
+                # Despliegue dinámico de campos según el método
                 detalles_item = ""
                 if forma_p in ["Cheque", "Echeq"]:
                     st.markdown("**📝 Detalles del Título:**")
@@ -374,25 +374,38 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
                     n_cheque = d1.text_input("Número de Cheque / Echeq", key="multi_n_cheque")
                     b_cheque = d2.text_input("Banco", key="multi_b_cheque")
                     v_cheque = d3.date_input("Vencimiento", key="multi_v_cheque")
-                    detalles_item = f"{forma_p} N°{n_cheque} - {b_cheque} (Vto: {v_cheque.strftime('%d/%m/%Y')})"
+                    
+                    if n_cheque and b_cheque:
+                        detalles_item = f"{forma_p} N°{n_cheque} - {b_cheque} (Vto: {v_cheque.strftime('%d/%m/%Y')})"
                 else:
-                    detalles_item = st.text_input("Nota adicional (opcional):", key="multi_nota")
-                    if not detalles_item:
+                    nota_p = st.text_input("Nota adicional / Referencia (opcional):", key="multi_nota")
+                    if nota_p:
+                        detalles_item = f"{forma_p} - {nota_p}"
+                    else:
                         detalles_item = f"Entrega en {forma_p}"
 
                 # Botón intermedio para meter la línea al desglose temporal
                 if st.button("➕ AGREGAR FORMA DE PAGO", use_container_width=True):
                     if monto_p <= 0:
-                        st.error("El monto debe ser mayor a 0.")
+                        st.error("El monto debe ser mayor a $0.00")
                     elif forma_p in ["Cheque", "Echeq"] and (not n_cheque or not b_cheque):
-                        st.error("Por favor, completá el número y el banco del cheque.")
+                        st.error("Por favor, completá el número y el banco del cheque antes de añadirlo.")
                     else:
+                        # Añadimos de forma segura al carrito local
                         st.session_state.carrito_pagos.append({
                             "Forma": forma_p,
-                            "Monto": monto_p,
+                            "Monto": float(monto_p),
                             "Fecha": fecha_p.strftime("%d/%m/%Y"),
                             "Detalle": detalles_item
                         })
+                        
+                        # --- LIMPIEZA DE MEMORIA INMEDIATA ---
+                        # Reseteamos los valores en st.session_state para que la próxima línea no arrastre datos viejos
+                        st.session_state["multi_monto_p"] = 0.0
+                        if "multi_nota" in st.session_state: st.session_state["multi_nota"] = ""
+                        if "multi_n_cheque" in st.session_state: st.session_state["multi_n_cheque"] = ""
+                        if "multi_b_cheque" in st.session_state: st.session_state["multi_b_cheque"] = ""
+                        
                         st.rerun()
 
             # --- GRILLA VISUAL DEL DETALLE CARGADO ---
