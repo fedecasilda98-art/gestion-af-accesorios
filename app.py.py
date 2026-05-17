@@ -822,7 +822,7 @@ with tabs[6]: # 🏁 CIERRE (FINANZAS Y CAPITAL)
     else:
         st.write("No se registraron movimientos de caja en el día de la fecha.")
 
-with tabs[7]: # 📦 REMITOS (VERSIÓN FINAL CORREGIDA SIN ERROR DE DESCARGA)
+with tabs[7]: # 📦 REMITOS (VERSIÓN FINAL INTEGRADA CON DESGLOSE DE TRANSPORTE)
     st.header("📦 Gestión y Emisión de Remitos")
     
     # Creamos las sub-pestañas internas dentro de la pestaña de Remitos
@@ -903,7 +903,7 @@ with tabs[7]: # 📦 REMITOS (VERSIÓN FINAL CORREGIDA SIN ERROR DE DESCARGA)
                     st.rerun()
 
     # =========================================================================
-    # SUB-PESTAÑA 2: REMITO PARA TRANSPORTE / TERCEROS
+    # SUB-PESTAÑA 2: REMITO PARA TRANSPORTE / TERCEROS CORREGIDO
     # =========================================================================
     with sub_remito_transporte:
         st.subheader("🚚 Generador de Remito de Despacho para Transporte")
@@ -941,20 +941,33 @@ with tabs[7]: # 📦 REMITOS (VERSIÓN FINAL CORREGIDA SIN ERROR DE DESCARGA)
             
             # --- FLUJO DIRECTO DE GENERACIÓN Y DESCARGA EN UN SOLO PASO ---
             if nombre_transporte:
-                # Armamos la estructura de los bultos de manera silenciosa
-                texto_bultos = f"BULTOS DE MERCADERÍA\n- Cantidad: {int(cant_bultos)} bulto(s)\n- Peso Aprox: {float(peso_total)} Kg\n- Transporte: {nombre_transporte}"
-                if obs_transporte:
-                    texto_bultos += f"\n- Obs: {obs_transporte}"
-                
+                # Estructuramos los datos en filas independientes una debajo de la otra
+                # Así evitamos amontonar texto largo y el PDF se grafica perfecto sin pisar los precios
                 items_transporte = [
                     {
-                        "Producto": texto_bultos,
-                        "Cant": int(cant_bultos),
+                        "Producto": f"DESPACHO POR: {nombre_transporte.upper()}",
+                        "Cant": 1,
+                        "Precio U.": float(valor_bulto),
                         "Subtotal": float(valor_bulto)
+                    },
+                    {
+                        "Producto": f"DETALLE: {int(cant_bultos)} bulto(s) --- Peso Total Aprox: {float(peso_total)} Kg",
+                        "Cant": 0,
+                        "Precio U.": 0.0,
+                        "Subtotal": 0.0
                     }
                 ]
                 
-                # Generamos el binario del PDF listo en memoria constante
+                # Si agregaste alguna nota, se suma como un tercer renglón limpio
+                if obs_transporte:
+                    items_transporte.append({
+                        "Producto": f"OBSERVACIONES: {obs_transporte}",
+                        "Cant": 0,
+                        "Precio U.": 0.0,
+                        "Subtotal": 0.0
+                    })
+                
+                # Generamos el binario del PDF usando tu función tradicional
                 pdf_transporte_ready = generar_pdf_binario(
                     cli_transporte,
                     items_transporte,
@@ -964,7 +977,7 @@ with tabs[7]: # 📦 REMITOS (VERSIÓN FINAL CORREGIDA SIN ERROR DE DESCARGA)
                     fecha_transporte.strftime("%d/%m/%Y")
                 )
                 
-                # Le presentamos el botón directo de descarga al usuario sin intermediarios
+                # Botón directo para descargar el documento limpio
                 st.download_button(
                     label="🚀 EMITIR Y DESCARGAR REMITO TRANSPORTE",
                     data=pdf_transporte_ready,
@@ -974,7 +987,7 @@ with tabs[7]: # 📦 REMITOS (VERSIÓN FINAL CORREGIDA SIN ERROR DE DESCARGA)
                     key=f"btn_direct_download_{trig}"
                 )
                 
-                # Botón auxiliar por si quiere limpiar los textos escritos para cargar otro transporte seguido
+                # Botón auxiliar para reiniciar los inputs y preparar otra carga
                 if st.button("🔄 Limpiar Formulario / Siguiente Carga", use_container_width=True):
                     st.session_state.transporte_reset_trigger += 1
                     st.rerun()
