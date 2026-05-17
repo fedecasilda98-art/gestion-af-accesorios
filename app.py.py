@@ -822,7 +822,7 @@ with tabs[6]: # 🏁 CIERRE (FINANZAS Y CAPITAL)
     else:
         st.write("No se registraron movimientos de caja en el día de la fecha.")
 
-with tabs[7]: # 📦 REMITOS (REDISEÑADO CON SUBDIVISIÓN PARA TRANSPORTE)
+with tabs[7]: # 📦 REMITOS (VERSIÓN FINAL CORREGIDA SIN ERROR DE DESCARGA)
     st.header("📦 Gestión y Emisión de Remitos")
     
     # Creamos las sub-pestañas internas dentro de la pestaña de Remitos
@@ -854,25 +854,18 @@ with tabs[7]: # 📦 REMITOS (REDISEÑADO CON SUBDIVISIÓN PARA TRANSPORTE)
         
         if st.button("➕ AGREGAR AL REMITO TRADICIONAL", use_container_width=True):
             if i_r:
-                # Guardamos en la lista temporal de ítems del remito
                 st.session_state.remito_items.append({
                     "Producto": i_r,
                     "Cant": q_r,
-                    "Precio U.": 0, # No se muestra en el remito impreso
-                    "Subtotal": 0   # No se muestra en el remito impreso
+                    "Precio U.": 0,
+                    "Subtotal": 0
                 })
                 st.rerun()
 
-        # 3. Visualización, Desglose y Descarga del Remito Tradicional
+        # 3. Visualización y Descarga del Remito Tradicional
         if st.session_state.remito_items:
             st.markdown("---")
             st.markdown("##### 📝 Items en el Remito Actual")
-            
-            # Encabezados de tabla interactiva
-            th_r1, th_r2, th_r3 = st.columns([4, 1.5, 0.5])
-            th_r1.markdown("**Producto / Accesorio**")
-            th_r2.markdown("**Cantidad**")
-            th_r3.markdown("")
             
             # Dibujamos cada ítem cargado con opción de borrado individual
             for idx_r, item_r in enumerate(st.session_state.remito_items):
@@ -880,9 +873,7 @@ with tabs[7]: # 📦 REMITOS (REDISEÑADO CON SUBDIVISIÓN PARA TRANSPORTE)
                     col_rp, col_rc, col_rx = st.columns([4, 1.5, 0.5])
                     col_rp.write(item_r["Producto"])
                     col_rc.write(f"{item_r['Cant']} unidad(es)")
-                    
-                    # Botón de cruz para remover un ítem mal cargado antes de generar el PDF
-                    if col_rx.button("❌", key=f"del_remito_item_{idx_r}", help="Eliminar artículo"):
+                    if col_rx.button("❌", key=f"del_remito_item_{idx_r}"):
                         st.session_state.remito_items.pop(idx_r)
                         st.rerun()
             
@@ -890,7 +881,6 @@ with tabs[7]: # 📦 REMITOS (REDISEÑADO CON SUBDIVISIÓN PARA TRANSPORTE)
             rd1, rd2 = st.columns(2)
             
             with rd1:
-                # Generar PDF (Usamos el título REMITO para que la función PDF oculte los precios)
                 pdf_remito = generar_pdf_binario(
                     cli_r, 
                     st.session_state.remito_items, 
@@ -911,8 +901,6 @@ with tabs[7]: # 📦 REMITOS (REDISEÑADO CON SUBDIVISIÓN PARA TRANSPORTE)
                 if st.button("🗑️ LIMPIAR TODO EL REMITO", use_container_width=True):
                     st.session_state.remito_items = []
                     st.rerun()
-                    
-            st.info("💡 Nota: El remito no afecta saldos de cuenta corriente ni stock automáticamente (usar la pestaña de Ventas para eso).")
 
     # =========================================================================
     # SUB-PESTAÑA 2: REMITO PARA TRANSPORTE / TERCEROS
@@ -920,7 +908,6 @@ with tabs[7]: # 📦 REMITOS (REDISEÑADO CON SUBDIVISIÓN PARA TRANSPORTE)
     with sub_remito_transporte:
         st.subheader("🚚 Generador de Remito de Despacho para Transporte")
         
-        # Inicializamos el trigger de reseteo exclusivo para el formulario de transporte
         if "transporte_reset_trigger" not in st.session_state:
             st.session_state.transporte_reset_trigger = 0
             
@@ -933,7 +920,7 @@ with tabs[7]: # 📦 REMITOS (REDISEÑADO CON SUBDIVISIÓN PARA TRANSPORTE)
             c_tra1, c_tra2 = st.columns(2)
             with c_tra1:
                 cli_transporte = st.selectbox("Cliente Destinatario:", cli_lista, key=f"tra_cli_{trig}")
-                nombre_transporte = st.text_input("Empresa de Transporte / Expreso / Comisionista:", placeholder="Ej: Expreso Lancioni, Transporte Don Pedro, etc.", key=f"tra_nombre_{trig}")
+                nombre_transporte = st.text_input("Empresa de Transporte / Expreso / Comisionista:", placeholder="Ej: Credifin, Expreso Lancioni, etc.", key=f"tra_nombre_{trig}")
             
             with c_tra2:
                 fecha_transporte = st.date_input("Fecha de Despacho:", datetime.now(), key=f"tra_fecha_{trig}")
@@ -946,28 +933,50 @@ with tabs[7]: # 📦 REMITOS (REDISEÑADO CON SUBDIVISIÓN PARA TRANSPORTE)
             with d_tra1:
                 cant_bultos = d_tra1.number_input("Cantidad de Bultos:", min_value=1, step=1, key=f"tra_bultos_{trig}")
             with d_tra2:
-                peso_total = d_tra2.number_input("Peso Total Estimado (Kg):", min_value=0.0, format="%.2f", help="Peso acumulado aproximado de los bultos", key=f"tra_peso_{trig}")
+                peso_total = d_tra2.number_input("Peso Total Estimado (Kg):", min_value=0.0, format="%.2f", key=f"tra_peso_{trig}")
             with d_tra3:
-                valor_bulto = d_tra3.number_input("Valor Declarado Total ($):", min_value=0.0, format="%.2f", help="Valor asegurado de la mercadería para el transporte", key=f"tra_valor_{trig}")
+                valor_bulto = d_tra3.number_input("Valor Declarado Total ($):", min_value=0.0, format="%.2f", key=f"tra_valor_{trig}")
 
-            # Botón de acción para procesar el remito de transporte
-            if st.button("🚀 GENERAR REMITO DE TRANSPORTE", use_container_width=True, type="primary"):
-                if not nombre_transporte:
-                    st.error("Por favor, ingresá el nombre de la empresa de transporte o comisionista.")
-                else:
-                    # Estructuramos la información para la función maestra binaria del PDF
-                    # Convertimos los inputs dinámicos a valores fijos estáticos
-                    bultos_fijos = int(cant_bultos)
-                    peso_fijo = float(peso_total)
-                    valor_fijo = float(valor_bulto)
-                    
-                    items_transporte = [
-                        {
-                            "Producto": f"BULTOS DE MERCADERÍA\n- Cantidad: {bultos_fijos} bulto(s)\n- Peso Aprox: {peso_fijo} Kg\n- Empresa/Expreso: {nombre_transporte}",
-                            "Cant": bultos_fijos,
-                            "Subtotal": valor_fijo  # Pasamos el valor declarado como "subtotal" para que figure en la planilla del seguro
-                        }
-                    ]
-                    
-                    if obs_transporte:
-                        items_transporte
+            st.markdown("---")
+            
+            # --- FLUJO DIRECTO DE GENERACIÓN Y DESCARGA EN UN SOLO PASO ---
+            if nombre_transporte:
+                # Armamos la estructura de los bultos de manera silenciosa
+                texto_bultos = f"BULTOS DE MERCADERÍA\n- Cantidad: {int(cant_bultos)} bulto(s)\n- Peso Aprox: {float(peso_total)} Kg\n- Transporte: {nombre_transporte}"
+                if obs_transporte:
+                    texto_bultos += f"\n- Obs: {obs_transporte}"
+                
+                items_transporte = [
+                    {
+                        "Producto": texto_bultos,
+                        "Cant": int(cant_bultos),
+                        "Subtotal": float(valor_bulto)
+                    }
+                ]
+                
+                # Generamos el binario del PDF listo en memoria constante
+                pdf_transporte_ready = generar_pdf_binario(
+                    cli_transporte,
+                    items_transporte,
+                    float(valor_bulto),
+                    df_clientes,
+                    "REMITO DE TRANSPORTE",
+                    fecha_transporte.strftime("%d/%m/%Y")
+                )
+                
+                # Le presentamos el botón directo de descarga al usuario sin intermediarios
+                st.download_button(
+                    label="🚀 EMITIR Y DESCARGAR REMITO TRANSPORTE",
+                    data=pdf_transporte_ready,
+                    file_name=f"Remito_Transporte_{cli_transporte.replace(' ', '_')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    key=f"btn_direct_download_{trig}"
+                )
+                
+                # Botón auxiliar por si quiere limpiar los textos escritos para cargar otro transporte seguido
+                if st.button("🔄 Limpiar Formulario / Siguiente Carga", use_container_width=True):
+                    st.session_state.transporte_reset_trigger += 1
+                    st.rerun()
+            else:
+                st.info("💡 Por favor, completá el nombre de la empresa de transporte para habilitar el botón de descarga.")
