@@ -99,10 +99,36 @@ def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRE
         pdf.cell(95, 8, f" TEL: {tel}", border="LR")
         pdf.cell(0, 8, f" LOCALIDAD: {loc}", border="R", ln=True)
         pdf.cell(0, 8, f" DIRECCIÓN: {dir}", border="LRB", ln=True)
-        pdf.ln(5)
+        pdf.ln(8)
 
         # --- CONTENIDO SEGÚN EL TIPO DE DOCUMENTO ---
-        if titulo == "RECIBO DE PAGO":
+        if titulo == "REMITO DE TRANSPORTE":
+            # Estructura de Ficha Logística Simple (Línea por línea sin formato de tabla comercial)
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 8, "DETALLE DE DESPACHO Y LOGÍSTICA", ln=True)
+            pdf.ln(2)
+            
+            # Dibujamos una línea divisoria sutil arriba
+            pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+            pdf.ln(4)
+            
+            # Leemos los datos planos que procesamos en el carrito
+            pdf.set_font("Arial", "", 11)
+            for item in carrito:
+                # Escribimos el contenido crudo en renglones limpios que ocupen todo el ancho de la página
+                pdf.cell(0, 7, item["Producto"], ln=True)
+            
+            pdf.ln(4)
+            # Dibujamos otra línea divisoria abajo antes del total
+            pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+            pdf.ln(5)
+
+            # --- PIE EXCLUSIVO PARA REMITO TRANSPORTE ---
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(130, 10, "VALOR DECLARADO TOTAL: ", 0, 0, "R")
+            pdf.cell(60, 10, f" {formatear_moneda(total)}", 1, 1, "R")
+
+        elif titulo == "RECIBO DE PAGO":
             # Estructura limpia para Recibos de Entrega de Dinero
             pdf.set_fill_color(200, 200, 200)
             pdf.set_font("Arial", "B", 10)
@@ -113,8 +139,15 @@ def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRE
             for item in carrito:
                 pdf.cell(140, 8, f" {item['Producto']}", 1)
                 pdf.cell(50, 8, formatear_moneda(item['Subtotal']), 1, 1, "R")
+                
+            # --- TOTAL RECIBO ---
+            pdf.ln(5)
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(140, 10, "MONTO TOTAL RECIBIDO: ", 0, 0, "R")
+            pdf.cell(50, 10, f" {formatear_moneda(total)}", 1, 1, "R")
+            
         else:
-            # Estructura tradicional para Presupuestos, Ventas, Remitos y Notas de Crédito
+            # Estructura tradicional para Presupuestos, Ventas, Remitos Tradicionales y Notas de Crédito
             pdf.set_fill_color(200, 200, 200)
             pdf.set_font("Arial", "B", 10)
             pdf.cell(110, 8, " Articulo / Accesorio", 1, 0, "L", fill=True)
@@ -129,13 +162,10 @@ def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRE
                 pdf.cell(15, 8, str(item['Cant']), 1, 0, "C")
                 pdf.cell(30, 8, formatear_moneda(p_u), 1, 0, "R")
                 pdf.cell(35, 8, formatear_moneda(item['Subtotal']), 1, 1, "R")
-
-        # --- TOTAL EN EL PIE ---
-        pdf.set_font("Arial", "B", 12)
-        if titulo == "RECIBO DE PAGO":
-            pdf.cell(140, 10, "MONTO TOTAL RECIBIDO: ", 0, 0, "R")
-            pdf.cell(50, 10, f" {formatear_moneda(total)}", 1, 1, "R")
-        else:
+                
+            # --- TOTAL TRADICIONAL ---
+            pdf.ln(5)
+            pdf.set_font("Arial", "B", 12)
             pdf.cell(125, 10, "TOTAL: ", 0, 0, "R")
             pdf.cell(35, 10, f" {formatear_moneda(total)}", 1, 1, "R")
 
@@ -902,8 +932,8 @@ with tabs[7]: # 📦 REMITOS (VERSIÓN FINAL INTEGRADA CON DESGLOSE DE TRANSPORT
                     st.session_state.remito_items = []
                     st.rerun()
 
-    # =========================================================================
-    # SUB-PESTAÑA 2: REMITO PARA TRANSPORTE / TERCEROS CORREGIDO
+   # =========================================================================
+    # SUB-PESTAÑA 2: REMITO PARA TRANSPORTE / TERCEROS
     # =========================================================================
     with sub_remito_transporte:
         st.subheader("🚚 Generador de Remito de Despacho para Transporte")
@@ -941,33 +971,22 @@ with tabs[7]: # 📦 REMITOS (VERSIÓN FINAL INTEGRADA CON DESGLOSE DE TRANSPORT
             
             # --- FLUJO DIRECTO DE GENERACIÓN Y DESCARGA EN UN SOLO PASO ---
             if nombre_transporte:
-                # Estructuramos los datos en filas independientes una debajo de la otra
-                # Así evitamos amontonar texto largo y el PDF se grafica perfecto sin pisar los precios
+                # Estructura ultralimpia en renglones independientes para FPDF
                 items_transporte = [
-                    {
-                        "Producto": f"DESPACHO POR: {nombre_transporte.upper()}",
-                        "Cant": 1,
-                        "Precio U.": float(valor_bulto),
-                        "Subtotal": float(valor_bulto)
-                    },
-                    {
-                        "Producto": f"DETALLE: {int(cant_bultos)} bulto(s) --- Peso Total Aprox: {float(peso_total)} Kg",
-                        "Cant": 0,
-                        "Precio U.": 0.0,
-                        "Subtotal": 0.0
-                    }
+                    {"Producto": f"Despacho por: {nombre_transporte.upper()}"},
+                    {"Producto": ""},  # Renglón vacío para dar espacio físico
+                    {"Producto": "Detalle de la carga:"},
+                    {"Producto": f"  - Cantidad de bultos: {int(cant_bultos)} bulto(s)"},
+                    {"Producto": f"  - Peso estimado: {float(peso_total):.2f} Kg"},
+                    {"Producto": f"  - Valor declarado por seguro: $ {float(valor_bulto):,.2f}"}
                 ]
                 
-                # Si agregaste alguna nota, se suma como un tercer renglón limpio
+                # Si se ingresaron observaciones, se suman prolijamente abajo de todo
                 if obs_transporte:
-                    items_transporte.append({
-                        "Producto": f"OBSERVACIONES: {obs_transporte}",
-                        "Cant": 0,
-                        "Precio U.": 0.0,
-                        "Subtotal": 0.0
-                    })
+                    items_transporte.append({"Producto": ""})
+                    items_transporte.append({"Producto": f"Observaciones: {obs_transporte}"})
                 
-                # Generamos el binario del PDF usando tu función tradicional
+                # Generamos el binario del PDF usando la función actualizada
                 pdf_transporte_ready = generar_pdf_binario(
                     cli_transporte,
                     items_transporte,
@@ -977,7 +996,7 @@ with tabs[7]: # 📦 REMITOS (VERSIÓN FINAL INTEGRADA CON DESGLOSE DE TRANSPORT
                     fecha_transporte.strftime("%d/%m/%Y")
                 )
                 
-                # Botón directo para descargar el documento limpio
+                # Botón directo para descargar
                 st.download_button(
                     label="🚀 EMITIR Y DESCARGAR REMITO TRANSPORTE",
                     data=pdf_transporte_ready,
@@ -987,7 +1006,6 @@ with tabs[7]: # 📦 REMITOS (VERSIÓN FINAL INTEGRADA CON DESGLOSE DE TRANSPORT
                     key=f"btn_direct_download_{trig}"
                 )
                 
-                # Botón auxiliar para reiniciar los inputs y preparar otra carga
                 if st.button("🔄 Limpiar Formulario / Siguiente Carga", use_container_width=True):
                     st.session_state.transporte_reset_trigger += 1
                     st.rerun()
