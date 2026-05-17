@@ -349,67 +349,122 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
             with c2:
                 st.metric("Saldo Pendiente", formatear_moneda(saldo_actual))
 
-            # --- SECCIÓN DE PAGOS ---
-            st.subheader("Registrar Pago")
-            with st.expander("Formulario de Pago", expanded=not st.session_state.get("pago_procesado_ctacte", False)):
-                with st.form("form_pago"):
-                    f1, f2, f3 = st.columns(3)
-                    with f1:
-                        monto_p = st.number_input("Monto $:", min_value=0.0, format="%.2f")
-                    with f2:
-                        forma_p = st.selectbox("Forma de Pago:", ["Efectivo", "Transferencia", "Cheque", "Echeq"])
-                    with f3:
-                        fecha_p = st.date_input("Fecha de cobro:", datetime.now())
-                    
-                    detalles_p = ""
-                    if forma_p in ["Cheque", "Echeq"]:
-                        st.markdown("**Detalles del Título:**")
-                        d1, d2, d3 = st.columns(3)
-                        n_cheque = d1.text_input("Número de Cheque")
-                        b_cheque = d2.text_input("Banco")
-                        v_cheque = d3.date_input("Vencimiento")
-                        detalles_p = f"{forma_p} N°{n_cheque} - {b_cheque} (Vto: {v_cheque})"
+            # Inicializamos el carrito temporal de pagos en el session_state si no existe
+            if "carrito_pagos" not in st.session_state:
+                st.session_state.carrito_pagos = []
+
+            # --- SECCIÓN DE PAGOS (MULTIMÉTODO TIPO CARRITO) ---
+            st.subheader("Registrar Pago / Entrega Múltiple")
+            
+            with st.container(border=True):
+                st.markdown("##### ➕ Añadir Línea de Cobro")
+                f1, f2, f3 = st.columns([1.5, 1.5, 1])
+                with f1:
+                    forma_p = st.selectbox("Forma de Pago:", ["Efectivo", "Transferencia", "Cheque", "Echeq"], key="multi_forma_p")
+                with f2:
+                    monto_p = st.number_input("Monto $:", min_value=0.0, format="%.2f", key="multi_monto_p")
+                with f3:
+                    fecha_p = st.date_input("Fecha de cobro:", datetime.now(), key="multi_fecha_p")
+                
+                # Despliegue dinámico de campos si el método requiere tracking de valores (cheques)
+                detalles_item = ""
+                if forma_p in ["Cheque", "Echeq"]:
+                    st.markdown("**📝 Detalles del Título:**")
+                    d1, d2, d3 = st.columns(3)
+                    n_cheque = d1.text_input("Número de Cheque / Echeq", key="multi_n_cheque")
+                    b_cheque = d2.text_input("Banco", key="multi_b_cheque")
+                    v_cheque = d3.date_input("Vencimiento", key="multi_v_cheque")
+                    detalles_item = f"{forma_p} N°{n_cheque} - {b_cheque} (Vto: {v_cheque.strftime('%d/%m/%Y')})"
+                else:
+                    detalles_item = st.text_input("Nota adicional (opcional):", key="multi_nota")
+                    if not detalles_item:
+                        detalles_item = f"Entrega en {forma_p}"
+
+                # Botón intermedio para meter la línea al desglose temporal
+                if st.button("➕ AGREGAR FORMA DE PAGO", use_container_width=True):
+                    if monto_p <= 0:
+                        st.error("El monto debe ser mayor a 0.")
+                    elif forma_p in ["Cheque", "Echeq"] and (not n_cheque or not b_cheque):
+                        st.error("Por favor, completá el número y el banco del cheque.")
                     else:
-                        detalles_p = st.text_input("Nota adicional (opcional):")
+                        st.session_state.carrito_pagos.append({
+                            "Forma": forma_p,
+                            "Monto": monto_p,
+                            "Fecha": fecha_p.strftime("%d/%m/%Y"),
+                            "Detalle": detalles_item
+                        })
+                        st.rerun()
 
-                    if st.form_submit_button("Confirmar Pago"):
-                        if monto_p <= 0:
-                            st.error("El monto debe ser mayor a 0.")
-                        else:
-                            # Actualizar Saldo
-                            df_clientes.at[idx_c, "Saldo"] -= monto_p
-                            df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
-                            
-                            # Registrar Movimiento
-                            n_mov = pd.DataFrame([{
-                                "Fecha": fecha_p.strftime("%d/%m/%Y"),
-                                "Cliente": cli_sel,
-                                "Tipo": "PAGO",
-                                "Monto": monto_p,
-                                "Metodo": forma_p,
-                                "Detalle": detalles_p if detalles_p else f"Pago en {forma_p}"
-                            }])
-                            df_movs = pd.concat([df_movs, n_mov], ignore_index=True)
-                            df_movs.to_csv(ARCHIVO_MOVIMIENTOS, index=False)
-                            
-                            # Guardar estados temporales para generar el PDF de descarga afuera del form
-                            st.session_state.pago_procesado_ctacte = True
-                            st.session_state.monto_p_ultimo = monto_p
-                            st.session_state.detalle_p_ultimo = f"Comprobante de Pago - {forma_p} | {detalles_p}"
-                            st.session_state.fecha_p_ultimo = fecha_p.strftime("%d/%m/%Y")
+            # --- GRILLA VISUAL DEL DETALLE CARGADO ---
+            if st.session_state.carrito_pagos:
+                st.markdown("##### 📝 Desglose del Recibo Actual")
+                
+                # Encabezados de tabla simples
+                th1, th2, th3, th4 = st.columns([1.5, 3.5, 1.5, 0.5])
+                th1.markdown("**Forma**")
+                th2.markdown("**Detalle / Título**")
+                th3.markdown("**Monto**")
+                th4.markdown("")
+                
+                for idx, p_item in enumerate(st.session_state.carrito_pagos):
+                    with st.container(border=True):
+                        col_f, col_d, col_m, col_x = st.columns([1.5, 3.5, 1.5, 0.5])
+                        col_f.write(p_item["Forma"])
+                        col_d.write(p_item["Detalle"])
+                        col_m.write(formatear_moneda(p_item["Monto"]))
+                        
+                        # Cruz rápida para remover renglones mal cargados
+                        if col_x.button("❌", key=f"del_pago_item_{idx}", help="Eliminar línea"):
+                            st.session_state.carrito_pagos.pop(idx)
                             st.rerun()
+                
+                total_cobrado = sum(item["Monto"] for item in st.session_state.carrito_pagos)
+                st.write(f"### TOTAL RECIBIDO: {formatear_moneda(total_cobrado)}")
+                
+                # Confirmación final y escritura en bases de datos
+                if st.button("📥 CONFIRMAR COBRO TOTAL E IMPACTAR SALDO", use_container_width=True, type="primary"):
+                    # 1. Descontar el total acumulado del saldo del cliente
+                    df_clientes.at[idx_c, "Saldo"] -= float(total_cobrado)
+                    df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
+                    
+                    # 2. Compilar strings limpios para guardar un renglón resumen en el historial general
+                    resumen_metodos = ", ".join([f"{item['Forma']}: {formatear_moneda(item['Monto'])}" for item in st.session_state.carrito_pagos])
+                    detalles_completos = " // ".join([item["Detalle"] for item in st.session_state.carrito_pagos])
+                    
+                    n_mov = pd.DataFrame([{
+                        "Fecha": datetime.now().strftime("%d/%m/%Y"),
+                        "Cliente": cli_sel,
+                        "Tipo": "PAGO",
+                        "Monto": total_cobrado,
+                        "Metodo": resumen_metodos[:50],  # Recorte seguro para visualización de tabla
+                        "Detalle": detalles_completos[:150]
+                    }])
+                    df_movs = pd.concat([df_movs, n_mov], ignore_index=True)
+                    df_movs.to_csv(ARCHIVO_MOVIMIENTOS, index=False)
+                    
+                    # 3. Almacenar copias profundas en session_state para la descarga externa del PDF
+                    st.session_state.pago_procesado_ctacte = True
+                    st.session_state.monto_p_ultimo = total_cobrado
+                    st.session_state.carrito_p_ultimo = list(st.session_state.carrito_pagos)
+                    st.session_state.fecha_p_ultimo = datetime.now().strftime("%d/%m/%Y %H:%M")
+                    
+                    # Vaciamos la mesa de trabajo del carrito de pagos
+                    st.session_state.carrito_pagos = []
+                    st.rerun()
 
-            # --- CASILLERO DE DESCARGA DE RECIBO (AFUERA DEL FORM) ---
+            # --- CASILLERO DE DESCARGA DE RECIBO (AFUERA DE LOS CONTENEDORES DE CARGA) ---
             if st.session_state.get("pago_procesado_ctacte", False):
                 with st.container(border=True):
-                    st.success(f"¡Pago de {formatear_moneda(st.session_state.monto_p_ultimo)} registrado con éxito para {cli_sel}!")
+                    st.success(f"¡Cobro combinado de {formatear_moneda(st.session_state.monto_p_ultimo)} asentado con éxito!")
                     
-                    # Estructuramos el item ficticio para pasarle a la función maestra
-                    items_recibo = [{
-                        "Producto": st.session_state.detalle_p_ultimo,
-                        "Cant": 1,
-                        "Subtotal": st.session_state.monto_p_ultimo
-                    }]
+                    # Transformamos el desglose guardado al formato que espera tu función maestra
+                    items_recibo = []
+                    for item in st.session_state.carrito_p_ultimo:
+                        items_recibo.append({
+                            "Producto": item["Detalle"],
+                            "Cant": 1,
+                            "Subtotal": item["Monto"]
+                        })
                     
                     pdf_recibo = generar_pdf_binario(
                         cli_sel, 
@@ -421,9 +476,9 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
                     )
                     
                     st.download_button(
-                        label="🖨️ DESCARGAR RECIBO DE PAGO (PDF)",
+                        label="🖨️ DESCARGAR RECIBO DE COBRO COMPUESTO (PDF)",
                         data=pdf_recibo,
-                        file_name=f"Recibo_{cli_sel.replace(' ', '_')}.pdf",
+                        file_name=f"Recibo_Cobro_{cli_sel.replace(' ', '_')}.pdf",
                         mime="application/pdf",
                         use_container_width=True,
                         key="btn_download_recibo_instantaneo"
@@ -431,6 +486,8 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
                     
                     if st.button("🔄 Finalizar y Limpiar Operación", use_container_width=True):
                         st.session_state.pago_procesado_ctacte = False
+                        if "carrito_p_ultimo" in st.session_state: 
+                            del st.session_state.carrito_p_ultimo
                         st.rerun()
 
             # --- HISTORIAL ESPECÍFICO Y RE-DESCARGA (CON ELIMINACIÓN SEGURA) ---
@@ -440,7 +497,6 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
             if not historial_cli.empty:
                 for i, row in historial_cli.iterrows():
                     with st.container(border=True):
-                        # Dividimos en 3 columnas para sumarle el botón de borrar al final
                         col_info, col_btn, col_del = st.columns([3, 1, 1])
                         
                         with col_info:
@@ -448,22 +504,28 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
                             st.caption(f"Método: {row['Metodo']} | Detalle: {row['Detalle']}")
                         
                         with col_btn:
-                            # Lógica de re-descarga según el tipo de movimiento (Ahora incluye PAGO)
                             if row['Tipo'] in ["VENTA", "N. CRÉDITO"]:
                                 items_fake = [{"Producto": row['Detalle'], "Cant": 1, "Precio U.": row['Monto'], "Subtotal": row['Monto']}]
                                 pdf_data = generar_pdf_binario(cli_sel, items_fake, row['Monto'], df_clientes, row['Tipo'], row['Fecha'])
                                 st.download_button("📥 PDF", pdf_data, f"{row['Tipo']}_{i}.pdf", key=f"re_down_{i}", use_container_width=True)
                             elif row['Tipo'] == "PAGO":
-                                items_fake_pago = [{"Producto": f"Comprobante de Pago - {row['Metodo']} | {row['Detalle']}", "Cant": 1, "Subtotal": row['Monto']}]
+                                # Re-construimos el desglose para el PDF si el pago histórico fue compuesto
+                                split_detalles = row['Detalle'].split(" // ")
+                                items_fake_pago = []
+                                for det in split_detalles:
+                                    items_fake_pago.append({
+                                        "Producto": det, 
+                                        "Cant": 1, 
+                                        "Subtotal": row['Monto'] / len(split_detalles) # Distribución equitativa aproximada para el visor
+                                    })
+                                    
                                 pdf_data_pago = generar_pdf_binario(cli_sel, items_fake_pago, row['Monto'], df_clientes, "RECIBO DE PAGO", row['Fecha'])
                                 st.download_button("📥 RECIBO", pdf_data_pago, f"Recibo_{i}.pdf", key=f"re_down_pago_{i}", use_container_width=True)
                         
                         with col_del:
-                            # Botón para activar la alerta de este movimiento específico
                             if st.button("🗑️ BORRAR", key=f"btn_pre_del_{i}", use_container_width=True):
                                 st.session_state[f"confirmar_borrado_{i}"] = True
 
-                        # --- CARTEL DE ALERTA (MARGEN DE ERROR) ---
                         if st.session_state.get(f"confirmar_borrado_{i}", False):
                             st.markdown("---")
                             st.warning(f"⚠️ **¿Estás seguro de eliminar este movimiento de {formatear_moneda(row['Monto'])}?** Esta acción afectará el saldo actual del cliente y no se puede deshacer.")
@@ -471,25 +533,20 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
                             cb1, cb2 = st.columns(2)
                             with cb1:
                                 if st.button("🔥 Sí, eliminar permanente", key=f"btn_del_conf_{i}", use_container_width=True):
-                                    # 1. Revertir el saldo en el archivo/DataFrame de clientes antes de borrar el registro
                                     idx_c = df_clientes[df_clientes["Nombre"] == cli_sel].index[0]
                                     monto_mov = float(row['Monto'])
                                     
                                     if row['Tipo'] == "PAGO":
-                                        df_clientes.at[idx_c, "Saldo"] += monto_mov  # Si elimino un pago, vuelve a deber esa plata
+                                        df_clientes.at[idx_c, "Saldo"] += monto_mov
                                     elif row['Tipo'] == "VENTA":
-                                        df_clientes.at[idx_c, "Saldo"] -= monto_mov  # Si elimino una venta, le descuento el cargo
+                                        df_clientes.at[idx_c, "Saldo"] -= monto_mov
                                     elif row['Tipo'] == "N. CRÉDITO":
-                                        df_clientes.at[idx_c, "Saldo"] += monto_mov  # Si elimino una nota de crédito, vuelve a cargarse la deuda
+                                        df_clientes.at[idx_c, "Saldo"] += monto_mov
                                     
-                                    # 2. Quitar la fila de movimientos usando su índice original
                                     df_movs = df_movs.drop(i)
-                                    
-                                    # 3. Guardar cambios en los dos archivos CSV de forma inmediata
                                     df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
                                     df_movs.to_csv(ARCHIVO_MOVIMIENTOS, index=False)
                                     
-                                    # Limpiar estado y refrescar interfaz
                                     st.session_state[f"confirmar_borrado_{i}"] = False
                                     st.success("Movimiento eliminado con éxito.")
                                     st.rerun()
@@ -504,7 +561,6 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
     with sub_gestion_clientes:
         st.subheader("Maestro de Clientes")
         
-        # 1. Agregar Cliente
         with st.expander("➕ Agregar Nuevo Cliente"):
             with st.form("add_cli"):
                 nc1, nc2 = st.columns(2)
@@ -519,7 +575,6 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
                         df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
                         st.success("Cliente agregado"); st.rerun()
 
-        # 2. Modificar/Eliminar Cliente
         st.markdown("---")
         st.write("**Listado de Clientes (Editar directamente en la tabla)**")
         df_cli_ed = st.data_editor(df_clientes, use_container_width=True, hide_index=True, key="ed_cli_tabla")
