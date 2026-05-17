@@ -70,7 +70,6 @@ class PDF(FPDF):
 
 def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRESUPUESTO", fecha_fija=None):
     try:
-        # Extraer datos del cliente para el encabezado
         datos_cli = df_clientes[df_clientes["Nombre"] == cliente_nombre]
         tel = str(datos_cli["Tel"].values[0]) if not datos_cli.empty else "-"
         loc = str(datos_cli["Localidad"].values[0]) if not datos_cli.empty else "-"
@@ -80,69 +79,69 @@ def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRE
         pdf = FPDF()
         pdf.add_page()
         
-        # --- ENCABEZADO (LOGO Y EMPRESA) ---
-        # Si tenés el logo como archivo 'logo.png' en la carpeta raíz, descomentá la siguiente línea:
-        # pdf.image("logo.png", 10, 8, 33) 
-        
+        # --- ENCABEZADO ---
         pdf.set_font("Arial", "B", 16)
-        pdf.cell(50) # Espacio para el logo
         pdf.cell(0, 10, "AF ACCESORIOS - ALUMINIO", ln=True)
         pdf.set_font("Arial", "", 10)
-        pdf.cell(50)
         pdf.cell(0, 5, "Casilda, Santa Fe | WhatsApp: +54 9 341 351-2049", ln=True)
-        pdf.ln(10)
+        pdf.ln(5)
 
-        # --- TIPO DE DOCUMENTO ---
-        pdf.set_fill_color(240, 240, 240) # Gris claro
+        # --- RECUADRO GRIS TIPO DOC ---
+        pdf.set_fill_color(240, 240, 240)
         pdf.set_font("Arial", "B", 11)
         pdf.cell(0, 8, f" TIPO DE DOCUMENTO: {titulo}", border=1, ln=True, fill=True)
 
-        # --- DATOS DEL CLIENTE ---
+        # --- GRILLA CLIENTE ---
         pdf.set_font("Arial", "B", 10)
-        # Fila 1
         pdf.cell(95, 8, f" CLIENTE: {cliente_nombre}", border="LR")
         pdf.cell(0, 8, f" FECHA: {fecha}", border="R", ln=True)
-        # Fila 2
         pdf.set_font("Arial", "", 10)
         pdf.cell(95, 8, f" TEL: {tel}", border="LR")
         pdf.cell(0, 8, f" LOCALIDAD: {loc}", border="R", ln=True)
-        # Fila 3
         pdf.cell(0, 8, f" DIRECCIÓN: {dir}", border="LRB", ln=True)
         pdf.ln(5)
 
-        # --- TABLA DE ARTÍCULOS ---
-        pdf.set_fill_color(200, 200, 200) # Gris más oscuro para cabecera
-        pdf.set_font("Arial", "B", 10)
-        pdf.cell(110, 8, " Artículo / Accesorio", 1, 0, "L", fill=True)
-        pdf.cell(20, 8, "Cant.", 1, 0, "C", fill=True)
-        pdf.cell(30, 8, "P. Unit", 1, 0, "C", fill=True)
-        pdf.cell(30, 8, "Subtotal", 1, 1, "C", fill=True)
+        # --- CONTENIDO SEGÚN EL TIPO DE DOCUMENTO ---
+        if titulo == "RECIBO DE PAGO":
+            # Estructura limpia para Recibos de Entrega de Dinero
+            pdf.set_fill_color(200, 200, 200)
+            pdf.set_font("Arial", "B", 10)
+            pdf.cell(140, 8, " Concepto / Detalle de Entrega", 1, 0, "L", fill=True)
+            pdf.cell(50, 8, "Total Abonado", 1, 1, "C", fill=True)
 
-        # Items
-        pdf.set_font("Arial", "", 10)
-        for item in carrito:
-            # Calculamos p.unit para mostrarlo (si es remito será 0)
-            p_unit = item['Subtotal'] / item['Cant'] if item['Cant'] > 0 else 0
-            
-            pdf.cell(110, 8, f" {item['Producto']}", 1)
-            pdf.cell(20, 8, str(item['Cant']), 1, 0, "C")
-            pdf.cell(30, 8, formatear_moneda(p_unit), 1, 0, "R")
-            pdf.cell(30, 8, formatear_moneda(item['Subtotal']), 1, 1, "R")
+            pdf.set_font("Arial", "", 10)
+            for item in carrito:
+                pdf.cell(140, 8, f" {item['Producto']}", 1)
+                pdf.cell(50, 8, formatear_moneda(item['Subtotal']), 1, 1, "R")
+        else:
+            # Estructura tradicional para Presupuestos, Ventas, Remitos y Notas de Crédito
+            pdf.set_fill_color(200, 200, 200)
+            pdf.set_font("Arial", "B", 10)
+            pdf.cell(110, 8, " Articulo / Accesorio", 1, 0, "L", fill=True)
+            pdf.cell(15, 8, "Cant.", 1, 0, "C", fill=True)
+            pdf.cell(30, 8, "P. Unit", 1, 0, "C", fill=True)
+            pdf.cell(35, 8, "Subtotal", 1, 1, "C", fill=True)
 
-        # --- TOTAL ---
-        pdf.ln(2)
+            pdf.set_font("Arial", "", 10)
+            for item in carrito:
+                p_u = item['Subtotal'] / item['Cant'] if item['Cant'] > 0 else 0
+                pdf.cell(110, 8, f" {item['Producto']}", 1)
+                pdf.cell(15, 8, str(item['Cant']), 1, 0, "C")
+                pdf.cell(30, 8, formatear_moneda(p_u), 1, 0, "R")
+                pdf.cell(35, 8, formatear_moneda(item['Subtotal']), 1, 1, "R")
+
+        # --- TOTAL EN EL PIE ---
         pdf.set_font("Arial", "B", 12)
-        pdf.cell(130) # Desplazar a la derecha
-        pdf.cell(30, 10, "TOTAL: ", 0, 0, "R")
-        pdf.cell(30, 10, f" {formatear_moneda(total)}", 1, 1, "R")
+        if titulo == "RECIBO DE PAGO":
+            pdf.cell(140, 10, "MONTO TOTAL RECIBIDO: ", 0, 0, "R")
+            pdf.cell(50, 10, f" {formatear_moneda(total)}", 1, 1, "R")
+        else:
+            pdf.cell(125, 10, "TOTAL: ", 0, 0, "R")
+            pdf.cell(35, 10, f" {formatear_moneda(total)}", 1, 1, "R")
 
-        # Retornar el PDF como bytes
         res = pdf.output(dest='S')
-        if isinstance(res, str):
-            return res.encode('latin-1', 'replace')
-        return bytes(res)
+        return bytes(res) if not isinstance(res, str) else res.encode('latin-1', 'replace')
     except Exception as e:
-        st.error(f"Error al generar el PDF: {e}")
         return b""
 
 # --- INTERFAZ PRINCIPAL ---
@@ -352,7 +351,7 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
 
             # --- SECCIÓN DE PAGOS ---
             st.subheader("Registrar Pago")
-            with st.expander("Formulario de Pago"):
+            with st.expander("Formulario de Pago", expanded=not st.session_state.get("pago_procesado_ctacte", False)):
                 with st.form("form_pago"):
                     f1, f2, f3 = st.columns(3)
                     with f1:
@@ -373,27 +372,68 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
                     else:
                         detalles_p = st.text_input("Nota adicional (opcional):")
 
-                    if st.form_submit_button("Confirmar y Descargar Recibo"):
-                        # Actualizar Saldo
-                        df_clientes.at[idx_c, "Saldo"] -= monto_p
-                        df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
-                        
-                        # Registrar Movimiento
-                        n_mov = pd.DataFrame([{
-                            "Fecha": fecha_p.strftime("%d/%m/%Y"),
-                            "Cliente": cli_sel,
-                            "Tipo": "PAGO",
-                            "Monto": monto_p,
-                            "Metodo": forma_p,
-                            "Detalle": detalles_p
-                        }])
-                        df_movs = pd.concat([df_movs, n_mov], ignore_index=True)
-                        df_movs.to_csv(ARCHIVO_MOVIMIENTOS, index=False)
-                        
-                        st.success(f"Pago registrado para {cli_sel}")
+                    if st.form_submit_button("Confirmar Pago"):
+                        if monto_p <= 0:
+                            st.error("El monto debe ser mayor a 0.")
+                        else:
+                            # Actualizar Saldo
+                            df_clientes.at[idx_c, "Saldo"] -= monto_p
+                            df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
+                            
+                            # Registrar Movimiento
+                            n_mov = pd.DataFrame([{
+                                "Fecha": fecha_p.strftime("%d/%m/%Y"),
+                                "Cliente": cli_sel,
+                                "Tipo": "PAGO",
+                                "Monto": monto_p,
+                                "Metodo": forma_p,
+                                "Detalle": detalles_p if detalles_p else f"Pago en {forma_p}"
+                            }])
+                            df_movs = pd.concat([df_movs, n_mov], ignore_index=True)
+                            df_movs.to_csv(ARCHIVO_MOVIMIENTOS, index=False)
+                            
+                            # Guardar estados temporales para generar el PDF de descarga afuera del form
+                            st.session_state.pago_procesado_ctacte = True
+                            st.session_state.monto_p_ultimo = monto_p
+                            st.session_state.detalle_p_ultimo = f"Comprobante de Pago - {forma_p} | {detalles_p}"
+                            st.session_state.fecha_p_ultimo = fecha_p.strftime("%d/%m/%Y")
+                            st.rerun()
+
+            # --- CASILLERO DE DESCARGA DE RECIBO (AFUERA DEL FORM) ---
+            if st.session_state.get("pago_procesado_ctacte", False):
+                with st.container(border=True):
+                    st.success(f"¡Pago de {formatear_moneda(st.session_state.monto_p_ultimo)} registrado con éxito para {cli_sel}!")
+                    
+                    # Estructuramos el item ficticio para pasarle a la función maestra
+                    items_recibo = [{
+                        "Producto": st.session_state.detalle_p_ultimo,
+                        "Cant": 1,
+                        "Subtotal": st.session_state.monto_p_ultimo
+                    }]
+                    
+                    pdf_recibo = generar_pdf_binario(
+                        cli_sel, 
+                        items_recibo, 
+                        st.session_state.monto_p_ultimo, 
+                        df_clientes, 
+                        "RECIBO DE PAGO", 
+                        st.session_state.fecha_p_ultimo
+                    )
+                    
+                    st.download_button(
+                        label="🖨️ DESCARGAR RECIBO DE PAGO (PDF)",
+                        data=pdf_recibo,
+                        file_name=f"Recibo_{cli_sel.replace(' ', '_')}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True,
+                        key="btn_download_recibo_instantaneo"
+                    )
+                    
+                    if st.button("🔄 Finalizar y Limpiar Operación", use_container_width=True):
+                        st.session_state.pago_procesado_ctacte = False
                         st.rerun()
 
-# --- HISTORIAL ESPECÍFICO Y RE-DESCARGA (CON ELIMINACIÓN SEGURA) ---
+            # --- HISTORIAL ESPECÍFICO Y RE-DESCARGA (CON ELIMINACIÓN SEGURA) ---
             st.subheader(f"Movimientos de {cli_sel}")
             historial_cli = df_movs[df_movs["Cliente"] == cli_sel].sort_index(ascending=False)
             
@@ -408,11 +448,15 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
                             st.caption(f"Método: {row['Metodo']} | Detalle: {row['Detalle']}")
                         
                         with col_btn:
-                            # Lógica de re-descarga según el tipo de movimiento
+                            # Lógica de re-descarga según el tipo de movimiento (Ahora incluye PAGO)
                             if row['Tipo'] in ["VENTA", "N. CRÉDITO"]:
                                 items_fake = [{"Producto": row['Detalle'], "Cant": 1, "Precio U.": row['Monto'], "Subtotal": row['Monto']}]
                                 pdf_data = generar_pdf_binario(cli_sel, items_fake, row['Monto'], df_clientes, row['Tipo'], row['Fecha'])
                                 st.download_button("📥 PDF", pdf_data, f"{row['Tipo']}_{i}.pdf", key=f"re_down_{i}", use_container_width=True)
+                            elif row['Tipo'] == "PAGO":
+                                items_fake_pago = [{"Producto": f"Comprobante de Pago - {row['Metodo']} | {row['Detalle']}", "Cant": 1, "Subtotal": row['Monto']}]
+                                pdf_data_pago = generar_pdf_binario(cli_sel, items_fake_pago, row['Monto'], df_clientes, "RECIBO DE PAGO", row['Fecha'])
+                                st.download_button("📥 RECIBO", pdf_data_pago, f"Recibo_{i}.pdf", key=f"re_down_pago_{i}", use_container_width=True)
                         
                         with col_del:
                             # Botón para activar la alerta de este movimiento específico
