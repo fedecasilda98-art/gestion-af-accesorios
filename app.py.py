@@ -557,7 +557,7 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
                                 st.download_button("📥 PDF", pdf_data, f"{row['Tipo']}_{i}.pdf", key=f"re_down_{i}", use_container_width=True)
                             elif row['Tipo'] == "PAGO":
                                 # Re-construimos el desglose para el PDF si el pago histórico fue compuesto
-                                split_detalles = row['Detalle'].split(" // ")
+                                split_detalles = str(row['Detalle']).split(" // ") if pd.notna(row['Detalle']) else []
                                 items_fake_pago = []
                                 for det in split_detalles:
                                     items_fake_pago.append({
