@@ -16,6 +16,7 @@ if not os.path.exists("data"):
 ARCHIVO_ARTICULOS = "data/lista_articulos_interna.csv"
 ARCHIVO_CLIENTES = "data/clientes_base.csv"
 ARCHIVO_MOVIMIENTOS = "data/movimientos_clientes.csv"
+ARCHIVO_COBRANZAS = "data/cobranzas_base.csv"
 CARPETA_FOTOS = "data/fotos_productos"
 WHATSAPP_NUM = "5493413512049"
 
@@ -42,10 +43,12 @@ def cargar_datos(archivo, columns):
 COLS_ARTICULOS = ["Rubro", "Proveedor", "Accesorio", "Stock", "Costo Base", "Flete", "% Ganancia", "Lista 1 (Cheques)", "Lista 2 (Efectivo)", "Descripcion"]
 COLS_CLIENTES = ["Nombre", "Tel", "Localidad", "Direccion", "Saldo"]
 COLS_MOVS = ["Fecha", "Cliente", "Tipo", "Monto", "Metodo", "Detalle"]
+COLS_COBRANZAS = ["Fecha", "Vendedor", "Cliente", "Zona", "Monto Cobrado", "Forma de Pago", "Estado", "Observaciones"]
 
 df_stock = cargar_datos(ARCHIVO_ARTICULOS, COLS_ARTICULOS)
 df_clientes = cargar_datos(ARCHIVO_CLIENTES, COLS_CLIENTES)
 df_movs = cargar_datos(ARCHIVO_MOVIMIENTOS, COLS_MOVS)
+df_cobranzas = cargar_datos(ARCHIVO_COBRANZAS, COLS_COBRANZAS)
 
 # --- ESTADOS DE SESIÓN ---
 if "carrito" not in st.session_state: st.session_state.carrito = []
@@ -174,8 +177,87 @@ def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRE
     except Exception as e:
         return b""
 
+
+
+def generar_pdf_cobranzas(df_reporte, fecha_reporte, vendedor_reporte, total_cobrado, resumen_formas):
+    try:
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_auto_page_break(auto=True, margin=15)
+
+        # --- ENCABEZADO ---
+        pdf.set_font("Arial", "B", 16)
+        pdf.cell(0, 10, "AF ACCESORIOS - ALUMINIO", ln=True, align="C")
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(0, 5, "Casilda, Santa Fe | WhatsApp: +54 9 341 351-2049", ln=True, align="C")
+        pdf.ln(8)
+
+        pdf.set_fill_color(240, 240, 240)
+        pdf.set_font("Arial", "B", 12)
+        pdf.cell(0, 8, " REPORTE DE COBRANZAS", border=1, ln=True, fill=True)
+        pdf.ln(4)
+
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(95, 8, f" Fecha: {fecha_reporte}", border=1)
+        pdf.cell(95, 8, f" Vendedor/Cobrador: {vendedor_reporte}", border=1, ln=True)
+        pdf.ln(6)
+
+        # --- TABLA ---
+        pdf.set_fill_color(200, 200, 200)
+        pdf.set_font("Arial", "B", 9)
+        pdf.cell(55, 8, " Cliente", 1, 0, "L", fill=True)
+        pdf.cell(35, 8, " Zona", 1, 0, "L", fill=True)
+        pdf.cell(30, 8, " Cobrado", 1, 0, "R", fill=True)
+        pdf.cell(35, 8, " Forma", 1, 0, "L", fill=True)
+        pdf.cell(35, 8, " Estado", 1, 1, "L", fill=True)
+
+        pdf.set_font("Arial", "", 8)
+        for _, row in df_reporte.iterrows():
+            cliente = str(row.get("Cliente", ""))[:30]
+            zona = str(row.get("Zona", ""))[:20]
+            monto = formatear_moneda(row.get("Monto Cobrado", 0))
+            forma = str(row.get("Forma de Pago", ""))[:20]
+            estado = str(row.get("Estado", ""))[:20]
+
+            pdf.cell(55, 8, f" {cliente}", 1)
+            pdf.cell(35, 8, f" {zona}", 1)
+            pdf.cell(30, 8, monto, 1, 0, "R")
+            pdf.cell(35, 8, f" {forma}", 1)
+            pdf.cell(35, 8, f" {estado}", 1, 1)
+
+            obs = str(row.get("Observaciones", "")).strip()
+            if obs:
+                pdf.set_font("Arial", "I", 8)
+                pdf.cell(190, 6, f" Observaciones: {obs[:110]}", 1, 1)
+                pdf.set_font("Arial", "", 8)
+
+        pdf.ln(6)
+
+        # --- RESUMEN ---
+        pdf.set_font("Arial", "B", 11)
+        pdf.cell(0, 8, "RESUMEN", ln=True)
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(95, 8, f" Total cobrado: {formatear_moneda(total_cobrado)}", border=1)
+        pdf.cell(95, 8, f" Registros: {len(df_reporte)}", border=1, ln=True)
+
+        pendientes = len(df_reporte[df_reporte["Estado"].isin(["Pendiente", "No estaba", "Reprogramar"])])
+        pdf.cell(190, 8, f" Pendientes / No cobrados: {pendientes}", border=1, ln=True)
+
+        pdf.ln(4)
+        pdf.set_font("Arial", "B", 10)
+        pdf.cell(0, 7, "Totales por forma de pago:", ln=True)
+        pdf.set_font("Arial", "", 10)
+        for forma, monto in resumen_formas.items():
+            pdf.cell(95, 7, f" {forma}", border=1)
+            pdf.cell(95, 7, formatear_moneda(monto), border=1, ln=True, align="R")
+
+        res = pdf.output(dest='S')
+        return bytes(res) if not isinstance(res, str) else res.encode('latin-1', 'replace')
+    except Exception:
+        return b""
+
 # --- INTERFAZ PRINCIPAL ---
-tabs = st.tabs(["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre", "📦 Remitos"])
+tabs = st.tabs(["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre", "📦 Remitos", "💵 Cobranzas"])
 
 with tabs[0]: # STOCK
     st.header("Inventario Actual")
@@ -1011,3 +1093,143 @@ with tabs[7]: # 📦 REMITOS (VERSIÓN FINAL INTEGRADA CON DESGLOSE DE TRANSPORT
                     st.rerun()
             else:
                 st.info("💡 Por favor, completá el nombre de la empresa de transporte para habilitar el botón de descarga.")
+
+with tabs[8]: # 💵 COBRANZAS
+    st.header("💵 Registro de Cobranzas")
+
+    st.subheader("Datos de la vuelta")
+    c_head1, c_head2 = st.columns(2)
+
+    with c_head1:
+        fecha_cobranza = st.date_input("Fecha:", datetime.now(), key="fecha_cobranza")
+
+    with c_head2:
+        vendedor_cobranza = st.text_input("Vendedor / Cobrador:", key="vendedor_cobranza")
+
+    st.markdown("---")
+    st.subheader("Cargar cobranza")
+
+    if not df_clientes.empty:
+        c1, c2, c3 = st.columns([2, 1, 1])
+
+        with c1:
+            cliente_cobranza = st.selectbox(
+                "Cliente:",
+                df_clientes["Nombre"].tolist(),
+                key="cliente_cobranza"
+            )
+
+        zona_cliente = df_clientes.loc[df_clientes["Nombre"] == cliente_cobranza, "Localidad"].values[0]
+
+        with c2:
+            st.text_input("Zona:", value=zona_cliente, disabled=True, key="zona_cobranza_visible")
+
+        with c3:
+            monto_cobrado = st.number_input(
+                "Monto cobrado:",
+                min_value=0.0,
+                format="%.2f",
+                key="monto_cobranza"
+            )
+
+        c4, c5 = st.columns(2)
+
+        with c4:
+            forma_pago = st.selectbox(
+                "Forma de pago:",
+                ["Efectivo", "Transferencia", "Cheque", "Echeq", "Combinado", "Sin cobro"],
+                key="forma_pago_cobranza"
+            )
+
+        with c5:
+            estado_cobranza = st.selectbox(
+                "Estado:",
+                ["Cobrado", "Parcial", "Pendiente", "No estaba", "Reprogramar"],
+                key="estado_cobranza"
+            )
+
+        observaciones = st.text_area("Observaciones:", key="obs_cobranza")
+
+        if st.button("➕ Agregar cobranza", use_container_width=True):
+            if vendedor_cobranza.strip() == "":
+                st.error("Ingresá el nombre del vendedor/cobrador.")
+            elif monto_cobrado <= 0 and estado_cobranza in ["Cobrado", "Parcial"]:
+                st.error("Para una cobranza cobrada o parcial, el monto debe ser mayor a cero.")
+            else:
+                nueva_cobranza = pd.DataFrame([{
+                    "Fecha": fecha_cobranza.strftime("%d/%m/%Y"),
+                    "Vendedor": vendedor_cobranza.strip(),
+                    "Cliente": cliente_cobranza,
+                    "Zona": zona_cliente,
+                    "Monto Cobrado": float(monto_cobrado),
+                    "Forma de Pago": forma_pago,
+                    "Estado": estado_cobranza,
+                    "Observaciones": observaciones
+                }])
+
+                df_cobranzas = pd.concat([df_cobranzas, nueva_cobranza], ignore_index=True)
+                df_cobranzas.to_csv(ARCHIVO_COBRANZAS, index=False)
+
+                st.success("Cobranza registrada correctamente.")
+                st.rerun()
+    else:
+        st.warning("Primero tenés que cargar clientes en la pestaña Cta Cte.")
+
+    st.markdown("---")
+    st.subheader("Base de cobranzas")
+
+    if not df_cobranzas.empty:
+        df_cobranzas["Monto Cobrado"] = pd.to_numeric(df_cobranzas["Monto Cobrado"], errors="coerce").fillna(0)
+
+        total_cobrado = df_cobranzas["Monto Cobrado"].sum()
+        total_registros = len(df_cobranzas)
+        total_pendientes = len(df_cobranzas[df_cobranzas["Estado"].isin(["Pendiente", "No estaba", "Reprogramar"])])
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total cobrado", formatear_moneda(total_cobrado))
+        m2.metric("Registros cargados", total_registros)
+        m3.metric("Pendientes / No cobrados", total_pendientes)
+
+        st.dataframe(df_cobranzas.sort_index(ascending=False), use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+        st.subheader("Reporte PDF de cobranzas")
+
+        fechas_disponibles = sorted(df_cobranzas["Fecha"].dropna().unique().tolist(), reverse=True)
+        vendedores_disponibles = sorted(df_cobranzas["Vendedor"].dropna().unique().tolist())
+
+        f_pdf1, f_pdf2 = st.columns(2)
+        with f_pdf1:
+            fecha_pdf = st.selectbox("Fecha del reporte:", fechas_disponibles, key="fecha_pdf_cobranzas")
+        with f_pdf2:
+            vendedor_pdf = st.selectbox("Vendedor/Cobrador:", vendedores_disponibles, key="vendedor_pdf_cobranzas")
+
+        df_reporte = df_cobranzas[
+            (df_cobranzas["Fecha"] == fecha_pdf) &
+            (df_cobranzas["Vendedor"] == vendedor_pdf)
+        ].copy()
+
+        if not df_reporte.empty:
+            total_pdf = df_reporte["Monto Cobrado"].sum()
+            resumen_formas = df_reporte.groupby("Forma de Pago")["Monto Cobrado"].sum().to_dict()
+
+            pdf_cobranzas = generar_pdf_cobranzas(
+                df_reporte.sort_index(ascending=False),
+                fecha_pdf,
+                vendedor_pdf,
+                total_pdf,
+                resumen_formas
+            )
+
+            st.download_button(
+                label="🖨️ Descargar reporte PDF de cobranzas",
+                data=pdf_cobranzas,
+                file_name=f"Reporte_Cobranzas_{fecha_pdf.replace('/', '-')}_{vendedor_pdf.replace(' ', '_')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key="btn_pdf_cobranzas"
+            )
+        else:
+            st.info("No hay cobranzas para la fecha y vendedor seleccionados.")
+    else:
+        st.info("Todavía no hay cobranzas registradas.")
