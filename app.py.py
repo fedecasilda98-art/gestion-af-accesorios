@@ -1097,17 +1097,36 @@ with tabs[7]: # 📦 REMITOS (VERSIÓN FINAL INTEGRADA CON DESGLOSE DE TRANSPORT
 with tabs[8]: # 💵 COBRANZAS
     st.header("💵 Registro de Cobranzas")
 
+    # --- ESTADOS TEMPORALES DE LA VUELTA ---
+    if "vuelta_cobranzas" not in st.session_state:
+        st.session_state.vuelta_cobranzas = []
+    if "cobranza_guardada" not in st.session_state:
+        st.session_state.cobranza_guardada = False
+    if "ultima_vuelta_cobranzas" not in st.session_state:
+        st.session_state.ultima_vuelta_cobranzas = []
+    if "ultima_fecha_cobranzas" not in st.session_state:
+        st.session_state.ultima_fecha_cobranzas = ""
+    if "ultimo_vendedor_cobranzas" not in st.session_state:
+        st.session_state.ultimo_vendedor_cobranzas = ""
+
     st.subheader("Datos de la vuelta")
     c_head1, c_head2 = st.columns(2)
 
     with c_head1:
-        fecha_cobranza = st.date_input("Fecha:", datetime.now(), key="fecha_cobranza")
+        fecha_cobranza = st.date_input(
+            "Fecha:",
+            datetime.now(),
+            key="fecha_cobranza"
+        )
 
     with c_head2:
-        vendedor_cobranza = st.text_input("Vendedor / Cobrador:", key="vendedor_cobranza")
+        vendedor_cobranza = st.text_input(
+            "Vendedor / Cobrador:",
+            key="vendedor_cobranza"
+        )
 
     st.markdown("---")
-    st.subheader("Cargar cobranza")
+    st.subheader("Cargar cobranza a la vuelta")
 
     if not df_clientes.empty:
         c1, c2, c3 = st.columns([2, 1, 1])
@@ -1119,10 +1138,18 @@ with tabs[8]: # 💵 COBRANZAS
                 key="cliente_cobranza"
             )
 
-        zona_cliente = df_clientes.loc[df_clientes["Nombre"] == cliente_cobranza, "Localidad"].values[0]
+        zona_cliente = df_clientes.loc[
+            df_clientes["Nombre"] == cliente_cobranza,
+            "Localidad"
+        ].values[0]
 
         with c2:
-            st.text_input("Zona:", value=zona_cliente, disabled=True, key="zona_cobranza_visible")
+            st.text_input(
+                "Zona:",
+                value=zona_cliente,
+                disabled=True,
+                key="zona_cobranza_visible"
+            )
 
         with c3:
             monto_cobrado = st.number_input(
@@ -1148,15 +1175,18 @@ with tabs[8]: # 💵 COBRANZAS
                 key="estado_cobranza"
             )
 
-        observaciones = st.text_area("Observaciones:", key="obs_cobranza")
+        observaciones = st.text_area(
+            "Observaciones:",
+            key="obs_cobranza"
+        )
 
-        if st.button("➕ Agregar cobranza", use_container_width=True):
+        if st.button("➕ Agregar a la vuelta", use_container_width=True):
             if vendedor_cobranza.strip() == "":
                 st.error("Ingresá el nombre del vendedor/cobrador.")
             elif monto_cobrado <= 0 and estado_cobranza in ["Cobrado", "Parcial"]:
                 st.error("Para una cobranza cobrada o parcial, el monto debe ser mayor a cero.")
             else:
-                nueva_cobranza = pd.DataFrame([{
+                st.session_state.vuelta_cobranzas.append({
                     "Fecha": fecha_cobranza.strftime("%d/%m/%Y"),
                     "Vendedor": vendedor_cobranza.strip(),
                     "Cliente": cliente_cobranza,
@@ -1165,18 +1195,114 @@ with tabs[8]: # 💵 COBRANZAS
                     "Forma de Pago": forma_pago,
                     "Estado": estado_cobranza,
                     "Observaciones": observaciones
-                }])
-
-                df_cobranzas = pd.concat([df_cobranzas, nueva_cobranza], ignore_index=True)
-                df_cobranzas.to_csv(ARCHIVO_COBRANZAS, index=False)
-
-                st.success("Cobranza registrada correctamente.")
+                })
+                st.success("Línea agregada a la vuelta actual.")
                 st.rerun()
     else:
         st.warning("Primero tenés que cargar clientes en la pestaña Cta Cte.")
 
+    # --- GRILLA TEMPORAL DE LA VUELTA ACTUAL ---
     st.markdown("---")
-    st.subheader("Base de cobranzas")
+    st.subheader("Detalle de la vuelta actual")
+
+    if st.session_state.vuelta_cobranzas:
+        total_vuelta = sum(item["Monto Cobrado"] for item in st.session_state.vuelta_cobranzas)
+        pendientes_vuelta = len([
+            item for item in st.session_state.vuelta_cobranzas
+            if item["Estado"] in ["Pendiente", "No estaba", "Reprogramar"]
+        ])
+
+        r1, r2, r3 = st.columns(3)
+        r1.metric("Total de la vuelta", formatear_moneda(total_vuelta))
+        r2.metric("Registros cargados", len(st.session_state.vuelta_cobranzas))
+        r3.metric("Pendientes / No cobrados", pendientes_vuelta)
+
+        h1, h2, h3, h4, h5, h6 = st.columns([2, 1, 1.2, 1.2, 2.5, 0.5])
+        h1.markdown("**Cliente**")
+        h2.markdown("**Monto**")
+        h3.markdown("**Forma**")
+        h4.markdown("**Estado**")
+        h5.markdown("**Observaciones**")
+        h6.markdown("")
+
+        for idx, item in enumerate(st.session_state.vuelta_cobranzas):
+            with st.container(border=True):
+                col_cliente, col_monto, col_forma, col_estado, col_obs, col_del = st.columns([2, 1, 1.2, 1.2, 2.5, 0.5])
+
+                col_cliente.write(item["Cliente"])
+                col_monto.write(formatear_moneda(item["Monto Cobrado"]))
+                col_forma.write(item["Forma de Pago"])
+                col_estado.write(item["Estado"])
+                col_obs.write(item["Observaciones"] if item["Observaciones"] else "-")
+
+                if col_del.button("❌", key=f"del_cobranza_vuelta_{idx}", help="Eliminar esta línea"):
+                    st.session_state.vuelta_cobranzas.pop(idx)
+                    st.rerun()
+
+        st.markdown("---")
+        b1, b2 = st.columns(2)
+
+        with b1:
+            if st.button("🗑️ Vaciar vuelta completa", use_container_width=True):
+                st.session_state.vuelta_cobranzas = []
+                st.session_state.cobranza_guardada = False
+                st.rerun()
+
+        with b2:
+            if st.button("✅ Finalizar y guardar vuelta", use_container_width=True, type="primary"):
+                df_nueva_vuelta = pd.DataFrame(st.session_state.vuelta_cobranzas, columns=COLS_COBRANZAS)
+                df_cobranzas = pd.concat([df_cobranzas, df_nueva_vuelta], ignore_index=True)
+                df_cobranzas.to_csv(ARCHIVO_COBRANZAS, index=False)
+
+                st.session_state.ultima_vuelta_cobranzas = list(st.session_state.vuelta_cobranzas)
+                st.session_state.ultima_fecha_cobranzas = st.session_state.vuelta_cobranzas[0]["Fecha"]
+                st.session_state.ultimo_vendedor_cobranzas = st.session_state.vuelta_cobranzas[0]["Vendedor"]
+                st.session_state.vuelta_cobranzas = []
+                st.session_state.cobranza_guardada = True
+                st.success("Vuelta de cobranzas guardada correctamente.")
+                st.rerun()
+    else:
+        st.info("Todavía no hay líneas cargadas en la vuelta actual.")
+
+    # --- DESCARGA PDF DESPUÉS DE GUARDAR ---
+    if st.session_state.get("cobranza_guardada", False) and st.session_state.get("ultima_vuelta_cobranzas"):
+        st.markdown("---")
+        with st.container(border=True):
+            st.success("La vuelta fue guardada. Ya podés descargar el reporte PDF.")
+
+            df_ultima_vuelta = pd.DataFrame(st.session_state.ultima_vuelta_cobranzas, columns=COLS_COBRANZAS)
+            df_ultima_vuelta["Monto Cobrado"] = pd.to_numeric(df_ultima_vuelta["Monto Cobrado"], errors="coerce").fillna(0)
+
+            total_pdf = df_ultima_vuelta["Monto Cobrado"].sum()
+            resumen_formas = df_ultima_vuelta.groupby("Forma de Pago")["Monto Cobrado"].sum().to_dict()
+
+            pdf_cobranzas = generar_pdf_cobranzas(
+                df_ultima_vuelta,
+                st.session_state.ultima_fecha_cobranzas,
+                st.session_state.ultimo_vendedor_cobranzas,
+                total_pdf,
+                resumen_formas
+            )
+
+            st.download_button(
+                label="🖨️ Descargar PDF de la vuelta guardada",
+                data=pdf_cobranzas,
+                file_name=f"Reporte_Cobranzas_{st.session_state.ultima_fecha_cobranzas.replace('/', '-')}_{st.session_state.ultimo_vendedor_cobranzas.replace(' ', '_')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key="btn_pdf_ultima_vuelta_cobranzas"
+            )
+
+            if st.button("🔄 Cerrar vuelta y empezar otra", use_container_width=True):
+                st.session_state.cobranza_guardada = False
+                st.session_state.ultima_vuelta_cobranzas = []
+                st.session_state.ultima_fecha_cobranzas = ""
+                st.session_state.ultimo_vendedor_cobranzas = ""
+                st.rerun()
+
+    # --- BASE HISTÓRICA DE COBRANZAS ---
+    st.markdown("---")
+    st.subheader("Base histórica de cobranzas")
 
     if not df_cobranzas.empty:
         df_cobranzas["Monto Cobrado"] = pd.to_numeric(df_cobranzas["Monto Cobrado"], errors="coerce").fillna(0)
@@ -1186,14 +1312,18 @@ with tabs[8]: # 💵 COBRANZAS
         total_pendientes = len(df_cobranzas[df_cobranzas["Estado"].isin(["Pendiente", "No estaba", "Reprogramar"])])
 
         m1, m2, m3 = st.columns(3)
-        m1.metric("Total cobrado", formatear_moneda(total_cobrado))
-        m2.metric("Registros cargados", total_registros)
+        m1.metric("Total cobrado histórico", formatear_moneda(total_cobrado))
+        m2.metric("Registros históricos", total_registros)
         m3.metric("Pendientes / No cobrados", total_pendientes)
 
-        st.dataframe(df_cobranzas.sort_index(ascending=False), use_container_width=True, hide_index=True)
+        st.dataframe(
+            df_cobranzas.sort_index(ascending=False),
+            use_container_width=True,
+            hide_index=True
+        )
 
         st.markdown("---")
-        st.subheader("Reporte PDF de cobranzas")
+        st.subheader("Reimprimir reporte PDF histórico")
 
         fechas_disponibles = sorted(df_cobranzas["Fecha"].dropna().unique().tolist(), reverse=True)
         vendedores_disponibles = sorted(df_cobranzas["Vendedor"].dropna().unique().tolist())
@@ -1210,24 +1340,24 @@ with tabs[8]: # 💵 COBRANZAS
         ].copy()
 
         if not df_reporte.empty:
-            total_pdf = df_reporte["Monto Cobrado"].sum()
-            resumen_formas = df_reporte.groupby("Forma de Pago")["Monto Cobrado"].sum().to_dict()
+            total_pdf_hist = df_reporte["Monto Cobrado"].sum()
+            resumen_formas_hist = df_reporte.groupby("Forma de Pago")["Monto Cobrado"].sum().to_dict()
 
-            pdf_cobranzas = generar_pdf_cobranzas(
+            pdf_cobranzas_hist = generar_pdf_cobranzas(
                 df_reporte.sort_index(ascending=False),
                 fecha_pdf,
                 vendedor_pdf,
-                total_pdf,
-                resumen_formas
+                total_pdf_hist,
+                resumen_formas_hist
             )
 
             st.download_button(
-                label="🖨️ Descargar reporte PDF de cobranzas",
-                data=pdf_cobranzas,
+                label="🖨️ Descargar reporte PDF histórico",
+                data=pdf_cobranzas_hist,
                 file_name=f"Reporte_Cobranzas_{fecha_pdf.replace('/', '-')}_{vendedor_pdf.replace(' ', '_')}.pdf",
                 mime="application/pdf",
                 use_container_width=True,
-                key="btn_pdf_cobranzas"
+                key="btn_pdf_cobranzas_historico"
             )
         else:
             st.info("No hay cobranzas para la fecha y vendedor seleccionados.")
