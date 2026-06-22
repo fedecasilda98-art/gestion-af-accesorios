@@ -17,6 +17,7 @@ ARCHIVO_ARTICULOS = "data/lista_articulos_interna.csv"
 ARCHIVO_CLIENTES = "data/clientes_base.csv"
 ARCHIVO_MOVIMIENTOS = "data/movimientos_clientes.csv"
 ARCHIVO_COBRANZAS = "data/cobranzas_base.csv"
+ARCHIVO_ZONAS = "data/zonas_base.csv"
 CARPETA_FOTOS = "data/fotos_productos"
 WHATSAPP_NUM = "5493413512049"
 
@@ -29,6 +30,13 @@ def cargar_datos(archivo, columns):
         try:
             df = pd.read_csv(archivo)
             df.columns = df.columns.str.strip()
+
+            # Compatibilidad con bases anteriores: si antes se usaba "Localidad", ahora se migra a "Ciudad".
+            if "Ciudad" in columns and "Ciudad" not in df.columns and "Localidad" in df.columns:
+                df["Ciudad"] = df["Localidad"]
+            if "Localidad" in columns and "Localidad" not in df.columns and "Ciudad" in df.columns:
+                df["Localidad"] = df["Ciudad"]
+
             for col in columns:
                 if col not in df.columns: 
                     df[col] = 0.0 if any(x in col for x in ["Saldo", "Monto", "Lista", "Costo"]) else ""
@@ -41,14 +49,16 @@ def cargar_datos(archivo, columns):
     return pd.DataFrame(columns=columns)
 
 COLS_ARTICULOS = ["Rubro", "Proveedor", "Accesorio", "Stock", "Costo Base", "Flete", "% Ganancia", "Lista 1 (Cheques)", "Lista 2 (Efectivo)", "Descripcion"]
-COLS_CLIENTES = ["Nombre", "Tel", "Localidad", "Direccion", "Saldo"]
+COLS_CLIENTES = ["Nombre", "Contacto", "Tel", "WhatsApp", "Direccion", "Ciudad", "Provincia", "Zona", "Rubro", "Potencial", "Observaciones", "Saldo"]
 COLS_MOVS = ["Fecha", "Cliente", "Tipo", "Monto", "Metodo", "Detalle"]
 COLS_COBRANZAS = ["Fecha", "Vendedor", "Cliente", "Zona", "Monto Cobrado", "Forma de Pago", "Estado", "Observaciones"]
+COLS_ZONAS = ["Zona", "Nombre"]
 
 df_stock = cargar_datos(ARCHIVO_ARTICULOS, COLS_ARTICULOS)
 df_clientes = cargar_datos(ARCHIVO_CLIENTES, COLS_CLIENTES)
 df_movs = cargar_datos(ARCHIVO_MOVIMIENTOS, COLS_MOVS)
 df_cobranzas = cargar_datos(ARCHIVO_COBRANZAS, COLS_COBRANZAS)
+df_zonas = cargar_datos(ARCHIVO_ZONAS, COLS_ZONAS)
 
 # --- ESTADOS DE SESIÓN ---
 if "carrito" not in st.session_state: st.session_state.carrito = []
@@ -75,7 +85,7 @@ def generar_pdf_binario(cliente_nombre, carrito, total, df_clientes, titulo="PRE
     try:
         datos_cli = df_clientes[df_clientes["Nombre"] == cliente_nombre]
         tel = str(datos_cli["Tel"].values[0]) if not datos_cli.empty else "-"
-        loc = str(datos_cli["Localidad"].values[0]) if not datos_cli.empty else "-"
+        loc = str(datos_cli["Ciudad"].values[0]) if (not datos_cli.empty and "Ciudad" in datos_cli.columns) else "-"
         dir = str(datos_cli["Direccion"].values[0]) if not datos_cli.empty else "-"
         fecha = fecha_fija if fecha_fija else datetime.now().strftime("%d/%m/%Y %H:%M")
 
@@ -257,7 +267,7 @@ def generar_pdf_cobranzas(df_reporte, fecha_reporte, vendedor_reporte, total_cob
         return b""
 
 # --- INTERFAZ PRINCIPAL ---
-tabs = st.tabs(["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre", "📦 Remitos", "💵 Cobranzas"])
+tabs = st.tabs(["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre", "📦 Remitos", "🗺️ Clientes y Zonas", "💵 Cobranzas"])
 
 with tabs[0]: # STOCK
     st.header("Inventario Actual")
@@ -692,17 +702,38 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
         
         with st.expander("➕ Agregar Nuevo Cliente"):
             with st.form("add_cli"):
-                nc1, nc2 = st.columns(2)
-                n_nom = nc1.text_input("Nombre Completo")
+                zonas_opciones_form = ["Sin zona"] + [
+                    f"{row['Zona']} - {row['Nombre']}" for _, row in df_zonas.iterrows()
+                    if str(row.get("Zona", "")).strip() and str(row.get("Nombre", "")).strip()
+                ]
+
+                nc1, nc2, nc3 = st.columns(3)
+                n_nom = nc1.text_input("Nombre / Razón Social")
+                n_contacto = nc1.text_input("Contacto")
                 n_tel = nc1.text_input("Teléfono")
-                n_loc = nc2.text_input("Localidad")
+                n_wsp = nc1.text_input("WhatsApp")
+
                 n_dir = nc2.text_input("Dirección")
+                n_ciudad = nc2.text_input("Ciudad")
+                n_prov = nc2.text_input("Provincia")
+                n_zona = nc2.selectbox("Zona", zonas_opciones_form)
+
+                n_rubro = nc3.selectbox("Rubro", ["Carpintería", "Vidriería", "Distribuidor", "Constructor", "Particular", "Otro"])
+                n_potencial = nc3.selectbox("Potencial", ["Alto", "Medio", "Bajo", "Sin definir"])
+                n_obs = nc3.text_area("Observaciones")
+
                 if st.form_submit_button("Guardar Cliente"):
                     if n_nom:
-                        nuevo_c = pd.DataFrame([{"Nombre": n_nom, "Tel": n_tel, "Localidad": n_loc, "Direccion": n_dir, "Saldo": 0.0}])
+                        nuevo_c = pd.DataFrame([{
+                            "Nombre": n_nom, "Contacto": n_contacto, "Tel": n_tel, "WhatsApp": n_wsp,
+                            "Direccion": n_dir, "Ciudad": n_ciudad, "Provincia": n_prov, "Zona": n_zona,
+                            "Rubro": n_rubro, "Potencial": n_potencial, "Observaciones": n_obs, "Saldo": 0.0
+                        }])
                         df_clientes = pd.concat([df_clientes, nuevo_c], ignore_index=True)
                         df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
                         st.success("Cliente agregado"); st.rerun()
+                    else:
+                        st.error("El nombre del cliente es obligatorio.")
 
         st.markdown("---")
         st.write("**Listado de Clientes (Editar directamente en la tabla)**")
@@ -1094,10 +1125,188 @@ with tabs[7]: # 📦 REMITOS (VERSIÓN FINAL INTEGRADA CON DESGLOSE DE TRANSPORT
             else:
                 st.info("💡 Por favor, completá el nombre de la empresa de transporte para habilitar el botón de descarga.")
 
-with tabs[8]: # 💵 COBRANZAS
+
+with tabs[8]: # 🗺️ CLIENTES Y ZONAS
+    st.header("🗺️ Clientes y Zonas")
+    st.caption("Control comercial de clientes por zona, ciudad, rubro y potencial.")
+
+    for col in COLS_CLIENTES:
+        if col not in df_clientes.columns:
+            df_clientes[col] = 0.0 if col == "Saldo" else ""
+    for col in COLS_ZONAS:
+        if col not in df_zonas.columns:
+            df_zonas[col] = ""
+
+    sub_zonas, sub_clientes, sub_estadisticas = st.tabs(["🧭 Zonas", "📋 Base de Clientes", "📊 Estadísticas"])
+
+    with sub_zonas:
+        st.subheader("Administrar zonas")
+        st.write("Creá zonas del tipo **Zona 1 - Rosario**, **Zona 2 - Córdoba**, etc. Después podés asignarlas a cada cliente.")
+
+        with st.container(border=True):
+            c_z1, c_z2 = st.columns([1, 3])
+
+            numeros_zona = []
+            for z in df_zonas["Zona"].dropna().astype(str).tolist():
+                match = re.search(r"(\d+)", z)
+                if match:
+                    numeros_zona.append(int(match.group(1)))
+            proximo_numero = max(numeros_zona) + 1 if numeros_zona else 1
+
+            with c_z1:
+                nueva_zona_codigo = st.text_input("Código", value=f"Zona {proximo_numero}", key="nueva_zona_codigo")
+            with c_z2:
+                nueva_zona_nombre = st.text_input("Nombre de la zona", placeholder="Ej: Rosario / Córdoba / Santa Fe", key="nueva_zona_nombre")
+
+            if st.button("➕ Crear zona", use_container_width=True):
+                if nueva_zona_codigo.strip() == "" or nueva_zona_nombre.strip() == "":
+                    st.error("Completá el código y el nombre de la zona.")
+                else:
+                    existe = (
+                        (df_zonas["Zona"].astype(str).str.lower() == nueva_zona_codigo.strip().lower()) |
+                        (df_zonas["Nombre"].astype(str).str.lower() == nueva_zona_nombre.strip().lower())
+                    ).any()
+
+                    if existe:
+                        st.warning("Ya existe una zona con ese código o nombre.")
+                    else:
+                        nueva_zona = pd.DataFrame([{"Zona": nueva_zona_codigo.strip(), "Nombre": nueva_zona_nombre.strip()}])
+                        df_zonas = pd.concat([df_zonas, nueva_zona], ignore_index=True)
+                        df_zonas.to_csv(ARCHIVO_ZONAS, index=False)
+                        st.success("Zona creada correctamente.")
+                        st.rerun()
+
+        st.markdown("---")
+        st.subheader("Listado de zonas")
+
+        if not df_zonas.empty:
+            hz1, hz2, hz3, hz4 = st.columns([1, 3, 1, 0.5])
+            hz1.markdown("**Zona**")
+            hz2.markdown("**Nombre**")
+            hz3.markdown("**Clientes**")
+            hz4.markdown("")
+
+            for idx, row in df_zonas.iterrows():
+                zona_full = f"{row['Zona']} - {row['Nombre']}"
+                clientes_asignados = len(df_clientes[df_clientes["Zona"] == zona_full]) if not df_clientes.empty else 0
+
+                with st.container(border=True):
+                    cz1, cz2, cz3, cz4 = st.columns([1, 3, 1, 0.5])
+                    cz1.write(row["Zona"])
+                    cz2.write(row["Nombre"])
+                    cz3.write(clientes_asignados)
+
+                    if cz4.button("❌", key=f"del_zona_{idx}", help="Eliminar zona"):
+                        if not df_clientes.empty:
+                            df_clientes.loc[df_clientes["Zona"] == zona_full, "Zona"] = "Sin zona"
+                            df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
+
+                        df_zonas = df_zonas.drop(idx).reset_index(drop=True)
+                        df_zonas.to_csv(ARCHIVO_ZONAS, index=False)
+                        st.warning("Zona eliminada. Los clientes asignados quedaron como 'Sin zona'.")
+                        st.rerun()
+
+            st.markdown("---")
+            st.write("**Editar nombres de zonas directamente en tabla**")
+            df_zonas_ed = st.data_editor(df_zonas, use_container_width=True, hide_index=True, key="ed_zonas_tabla")
+            if st.button("💾 Guardar cambios de zonas", use_container_width=True):
+                df_zonas_ed.to_csv(ARCHIVO_ZONAS, index=False)
+                st.success("Zonas actualizadas correctamente.")
+                st.rerun()
+        else:
+            st.info("Todavía no hay zonas creadas. Creá la primera zona para empezar a organizar clientes.")
+
+    with sub_clientes:
+        st.subheader("Base de clientes tipo Excel")
+
+        zonas_opciones = ["Todas", "Sin zona"] + [
+            f"{row['Zona']} - {row['Nombre']}" for _, row in df_zonas.iterrows()
+            if str(row.get("Zona", "")).strip() and str(row.get("Nombre", "")).strip()
+        ]
+
+        f1, f2, f3, f4 = st.columns(4)
+        filtro_zona = f1.selectbox("Filtrar por zona", zonas_opciones, key="filtro_zona_clientes")
+        ciudades = ["Todas"] + sorted([x for x in df_clientes["Ciudad"].dropna().astype(str).unique().tolist() if x.strip()])
+        filtro_ciudad = f2.selectbox("Filtrar por ciudad", ciudades, key="filtro_ciudad_clientes")
+        rubros = ["Todos"] + sorted([x for x in df_clientes["Rubro"].dropna().astype(str).unique().tolist() if x.strip()])
+        filtro_rubro = f3.selectbox("Filtrar por rubro", rubros, key="filtro_rubro_clientes")
+        potenciales = ["Todos"] + sorted([x for x in df_clientes["Potencial"].dropna().astype(str).unique().tolist() if x.strip()])
+        filtro_potencial = f4.selectbox("Filtrar por potencial", potenciales, key="filtro_potencial_clientes")
+
+        df_filtrado = df_clientes.copy()
+        if filtro_zona != "Todas":
+            df_filtrado = df_filtrado[df_filtrado["Zona"] == filtro_zona]
+        if filtro_ciudad != "Todas":
+            df_filtrado = df_filtrado[df_filtrado["Ciudad"] == filtro_ciudad]
+        if filtro_rubro != "Todos":
+            df_filtrado = df_filtrado[df_filtrado["Rubro"] == filtro_rubro]
+        if filtro_potencial != "Todos":
+            df_filtrado = df_filtrado[df_filtrado["Potencial"] == filtro_potencial]
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Clientes filtrados", len(df_filtrado))
+        m2.metric("Total clientes", len(df_clientes))
+        m3.metric("Sin zona", len(df_clientes[df_clientes["Zona"].fillna("").isin(["", "Sin zona"])]))
+        m4.metric("Potencial alto", len(df_clientes[df_clientes["Potencial"] == "Alto"]))
+
+        st.markdown("##### Vista filtrada")
+        columnas_vista = ["Nombre", "Contacto", "Tel", "WhatsApp", "Direccion", "Ciudad", "Provincia", "Zona", "Rubro", "Potencial", "Observaciones"]
+        st.dataframe(df_filtrado[columnas_vista], use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+        st.markdown("##### Editar base completa de clientes")
+        st.info("Desde esta tabla podés modificar teléfono, dirección, ciudad, zona, rubro, potencial y observaciones. Luego guardá los cambios.")
+        df_clientes_ed_zonas = st.data_editor(df_clientes[COLS_CLIENTES], use_container_width=True, hide_index=True, key="ed_clientes_zonas_tabla")
+
+        if st.button("💾 Guardar cambios en clientes", use_container_width=True):
+            df_clientes_ed_zonas.to_csv(ARCHIVO_CLIENTES, index=False)
+            st.success("Base de clientes actualizada correctamente.")
+            st.rerun()
+
+    with sub_estadisticas:
+        st.subheader("Estadísticas comerciales")
+
+        if df_clientes.empty:
+            st.info("Todavía no hay clientes cargados.")
+        else:
+            e1, e2, e3, e4 = st.columns(4)
+            e1.metric("Total clientes", len(df_clientes))
+            e2.metric("Zonas creadas", len(df_zonas))
+            e3.metric("Ciudades", df_clientes["Ciudad"].replace("", pd.NA).dropna().nunique())
+            e4.metric("Clientes sin zona", len(df_clientes[df_clientes["Zona"].fillna("").isin(["", "Sin zona"])]))
+
+            col_est1, col_est2 = st.columns(2)
+
+            with col_est1:
+                st.markdown("##### Clientes por zona")
+                resumen_zona = df_clientes.copy()
+                resumen_zona["Zona"] = resumen_zona["Zona"].replace("", "Sin zona").fillna("Sin zona")
+                resumen_zona = resumen_zona.groupby("Zona").size().reset_index(name="Cantidad")
+                st.dataframe(resumen_zona.sort_values("Cantidad", ascending=False), use_container_width=True, hide_index=True)
+
+                st.markdown("##### Clientes por ciudad")
+                resumen_ciudad = df_clientes.copy()
+                resumen_ciudad["Ciudad"] = resumen_ciudad["Ciudad"].replace("", "Sin ciudad").fillna("Sin ciudad")
+                resumen_ciudad = resumen_ciudad.groupby("Ciudad").size().reset_index(name="Cantidad")
+                st.dataframe(resumen_ciudad.sort_values("Cantidad", ascending=False), use_container_width=True, hide_index=True)
+
+            with col_est2:
+                st.markdown("##### Clientes por rubro")
+                resumen_rubro_cli = df_clientes.copy()
+                resumen_rubro_cli["Rubro"] = resumen_rubro_cli["Rubro"].replace("", "Sin rubro").fillna("Sin rubro")
+                resumen_rubro_cli = resumen_rubro_cli.groupby("Rubro").size().reset_index(name="Cantidad")
+                st.dataframe(resumen_rubro_cli.sort_values("Cantidad", ascending=False), use_container_width=True, hide_index=True)
+
+                st.markdown("##### Clientes por potencial")
+                resumen_potencial = df_clientes.copy()
+                resumen_potencial["Potencial"] = resumen_potencial["Potencial"].replace("", "Sin definir").fillna("Sin definir")
+                resumen_potencial = resumen_potencial.groupby("Potencial").size().reset_index(name="Cantidad")
+                st.dataframe(resumen_potencial.sort_values("Cantidad", ascending=False), use_container_width=True, hide_index=True)
+
+
+with tabs[9]: # 💵 COBRANZAS
     st.header("💵 Registro de Cobranzas")
 
-    # --- ESTADOS TEMPORALES DE LA VUELTA ---
     if "vuelta_cobranzas" not in st.session_state:
         st.session_state.vuelta_cobranzas = []
     if "cobranza_guardada" not in st.session_state:
@@ -1113,17 +1322,10 @@ with tabs[8]: # 💵 COBRANZAS
     c_head1, c_head2 = st.columns(2)
 
     with c_head1:
-        fecha_cobranza = st.date_input(
-            "Fecha:",
-            datetime.now(),
-            key="fecha_cobranza"
-        )
+        fecha_cobranza = st.date_input("Fecha:", datetime.now(), key="fecha_cobranza")
 
     with c_head2:
-        vendedor_cobranza = st.text_input(
-            "Vendedor / Cobrador:",
-            key="vendedor_cobranza"
-        )
+        vendedor_cobranza = st.text_input("Vendedor / Cobrador:", key="vendedor_cobranza")
 
     st.markdown("---")
     st.subheader("Cargar cobranza a la vuelta")
@@ -1132,53 +1334,30 @@ with tabs[8]: # 💵 COBRANZAS
         c1, c2, c3 = st.columns([2, 1, 1])
 
         with c1:
-            cliente_cobranza = st.selectbox(
-                "Cliente:",
-                df_clientes["Nombre"].tolist(),
-                key="cliente_cobranza"
-            )
+            cliente_cobranza = st.selectbox("Cliente:", df_clientes["Nombre"].tolist(), key="cliente_cobranza")
 
-        zona_cliente = df_clientes.loc[
-            df_clientes["Nombre"] == cliente_cobranza,
-            "Localidad"
-        ].values[0]
+        datos_cliente_cob = df_clientes[df_clientes["Nombre"] == cliente_cobranza]
+        zona_cliente = "Sin zona"
+        if not datos_cliente_cob.empty:
+            zona_valor = str(datos_cliente_cob["Zona"].values[0]).strip() if "Zona" in datos_cliente_cob.columns else ""
+            ciudad_valor = str(datos_cliente_cob["Ciudad"].values[0]).strip() if "Ciudad" in datos_cliente_cob.columns else ""
+            zona_cliente = zona_valor if zona_valor else (ciudad_valor if ciudad_valor else "Sin zona")
 
         with c2:
-            st.text_input(
-                "Zona:",
-                value=zona_cliente,
-                disabled=True,
-                key="zona_cobranza_visible"
-            )
+            st.text_input("Zona:", value=zona_cliente, disabled=True, key="zona_cobranza_visible")
 
         with c3:
-            monto_cobrado = st.number_input(
-                "Monto cobrado:",
-                min_value=0.0,
-                format="%.2f",
-                key="monto_cobranza"
-            )
+            monto_cobrado = st.number_input("Monto cobrado:", min_value=0.0, format="%.2f", key="monto_cobranza")
 
         c4, c5 = st.columns(2)
 
         with c4:
-            forma_pago = st.selectbox(
-                "Forma de pago:",
-                ["Efectivo", "Transferencia", "Cheque", "Echeq", "Combinado", "Sin cobro"],
-                key="forma_pago_cobranza"
-            )
+            forma_pago = st.selectbox("Forma de pago:", ["Efectivo", "Transferencia", "Cheque", "Echeq", "Combinado", "Sin cobro"], key="forma_pago_cobranza")
 
         with c5:
-            estado_cobranza = st.selectbox(
-                "Estado:",
-                ["Cobrado", "Parcial", "Pendiente", "No estaba", "Reprogramar"],
-                key="estado_cobranza"
-            )
+            estado_cobranza = st.selectbox("Estado:", ["Cobrado", "Parcial", "Pendiente", "No estaba", "Reprogramar"], key="estado_cobranza")
 
-        observaciones = st.text_area(
-            "Observaciones:",
-            key="obs_cobranza"
-        )
+        observaciones = st.text_area("Observaciones:", key="obs_cobranza")
 
         if st.button("➕ Agregar a la vuelta", use_container_width=True):
             if vendedor_cobranza.strip() == "":
@@ -1201,16 +1380,12 @@ with tabs[8]: # 💵 COBRANZAS
     else:
         st.warning("Primero tenés que cargar clientes en la pestaña Cta Cte.")
 
-    # --- GRILLA TEMPORAL DE LA VUELTA ACTUAL ---
     st.markdown("---")
     st.subheader("Detalle de la vuelta actual")
 
     if st.session_state.vuelta_cobranzas:
         total_vuelta = sum(item["Monto Cobrado"] for item in st.session_state.vuelta_cobranzas)
-        pendientes_vuelta = len([
-            item for item in st.session_state.vuelta_cobranzas
-            if item["Estado"] in ["Pendiente", "No estaba", "Reprogramar"]
-        ])
+        pendientes_vuelta = len([item for item in st.session_state.vuelta_cobranzas if item["Estado"] in ["Pendiente", "No estaba", "Reprogramar"]])
 
         r1, r2, r3 = st.columns(3)
         r1.metric("Total de la vuelta", formatear_moneda(total_vuelta))
@@ -1228,7 +1403,6 @@ with tabs[8]: # 💵 COBRANZAS
         for idx, item in enumerate(st.session_state.vuelta_cobranzas):
             with st.container(border=True):
                 col_cliente, col_monto, col_forma, col_estado, col_obs, col_del = st.columns([2, 1, 1.2, 1.2, 2.5, 0.5])
-
                 col_cliente.write(item["Cliente"])
                 col_monto.write(formatear_moneda(item["Monto Cobrado"]))
                 col_forma.write(item["Forma de Pago"])
@@ -1264,7 +1438,6 @@ with tabs[8]: # 💵 COBRANZAS
     else:
         st.info("Todavía no hay líneas cargadas en la vuelta actual.")
 
-    # --- DESCARGA PDF DESPUÉS DE GUARDAR ---
     if st.session_state.get("cobranza_guardada", False) and st.session_state.get("ultima_vuelta_cobranzas"):
         st.markdown("---")
         with st.container(border=True):
