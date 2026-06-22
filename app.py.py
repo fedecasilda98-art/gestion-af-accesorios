@@ -49,7 +49,7 @@ def cargar_datos(archivo, columns):
     return pd.DataFrame(columns=columns)
 
 COLS_ARTICULOS = ["Rubro", "Proveedor", "Accesorio", "Stock", "Costo Base", "Flete", "% Ganancia", "Lista 1 (Cheques)", "Lista 2 (Efectivo)", "Descripcion"]
-COLS_CLIENTES = ["Nombre", "Contacto", "Tel", "WhatsApp", "Direccion", "Ciudad", "Provincia", "Zona", "Rubro", "Potencial", "Observaciones", "Saldo"]
+COLS_CLIENTES = ["Nombre", "Contacto", "Tel", "WhatsApp", "Direccion", "Ciudad", "Provincia", "Zona", "Observaciones", "Saldo"]
 COLS_MOVS = ["Fecha", "Cliente", "Tipo", "Monto", "Metodo", "Detalle"]
 COLS_COBRANZAS = ["Fecha", "Vendedor", "Cliente", "Zona", "Monto Cobrado", "Forma de Pago", "Estado", "Observaciones"]
 COLS_ZONAS = ["Zona", "Nombre"]
@@ -718,8 +718,6 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
                 n_prov = nc2.text_input("Provincia")
                 n_zona = nc2.selectbox("Zona", zonas_opciones_form)
 
-                n_rubro = nc3.selectbox("Rubro", ["Carpintería", "Vidriería", "Distribuidor", "Constructor", "Particular", "Otro"])
-                n_potencial = nc3.selectbox("Potencial", ["Alto", "Medio", "Bajo", "Sin definir"])
                 n_obs = nc3.text_area("Observaciones")
 
                 if st.form_submit_button("Guardar Cliente"):
@@ -727,7 +725,7 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
                         nuevo_c = pd.DataFrame([{
                             "Nombre": n_nom, "Contacto": n_contacto, "Tel": n_tel, "WhatsApp": n_wsp,
                             "Direccion": n_dir, "Ciudad": n_ciudad, "Provincia": n_prov, "Zona": n_zona,
-                            "Rubro": n_rubro, "Potencial": n_potencial, "Observaciones": n_obs, "Saldo": 0.0
+                            "Observaciones": n_obs, "Saldo": 0.0
                         }])
                         df_clientes = pd.concat([df_clientes, nuevo_c], ignore_index=True)
                         df_clientes.to_csv(ARCHIVO_CLIENTES, index=False)
@@ -737,11 +735,11 @@ with tabs[3]: # 👥 CTA CTE (REDISEÑADO)
 
         st.markdown("---")
         st.write("**Listado de Clientes (Editar directamente en la tabla)**")
-        df_cli_ed = st.data_editor(df_clientes, use_container_width=True, hide_index=True, key="ed_cli_tabla")
+        df_cli_ed = st.data_editor(df_clientes[COLS_CLIENTES], use_container_width=True, hide_index=True, key="ed_cli_tabla")
         
         c_btn1, c_btn2 = st.columns(2)
         if c_btn1.button("💾 Guardar Cambios en Tabla"):
-            df_cli_ed.to_csv(ARCHIVO_CLIENTES, index=False)
+            df_cli_ed[COLS_CLIENTES].to_csv(ARCHIVO_CLIENTES, index=False)
             st.success("Cambios guardados"); st.rerun()
             
         if c_btn2.button("🗑️ Eliminar Cliente Seleccionado"):
@@ -1128,7 +1126,7 @@ with tabs[7]: # 📦 REMITOS (VERSIÓN FINAL INTEGRADA CON DESGLOSE DE TRANSPORT
 
 with tabs[8]: # 🗺️ CLIENTES Y ZONAS
     st.header("🗺️ Clientes y Zonas")
-    st.caption("Control comercial de clientes por zona, ciudad, rubro y potencial.")
+    st.caption("Control comercial de clientes por zona, ciudad, teléfono, dirección y observaciones.")
 
     for col in COLS_CLIENTES:
         if col not in df_clientes.columns:
@@ -1224,39 +1222,46 @@ with tabs[8]: # 🗺️ CLIENTES Y ZONAS
             if str(row.get("Zona", "")).strip() and str(row.get("Nombre", "")).strip()
         ]
 
-        f1, f2, f3, f4 = st.columns(4)
+        f1, f2 = st.columns(2)
         filtro_zona = f1.selectbox("Filtrar por zona", zonas_opciones, key="filtro_zona_clientes")
         ciudades = ["Todas"] + sorted([x for x in df_clientes["Ciudad"].dropna().astype(str).unique().tolist() if x.strip()])
         filtro_ciudad = f2.selectbox("Filtrar por ciudad", ciudades, key="filtro_ciudad_clientes")
-        rubros = ["Todos"] + sorted([x for x in df_clientes["Rubro"].dropna().astype(str).unique().tolist() if x.strip()])
-        filtro_rubro = f3.selectbox("Filtrar por rubro", rubros, key="filtro_rubro_clientes")
-        potenciales = ["Todos"] + sorted([x for x in df_clientes["Potencial"].dropna().astype(str).unique().tolist() if x.strip()])
-        filtro_potencial = f4.selectbox("Filtrar por potencial", potenciales, key="filtro_potencial_clientes")
 
         df_filtrado = df_clientes.copy()
         if filtro_zona != "Todas":
             df_filtrado = df_filtrado[df_filtrado["Zona"] == filtro_zona]
         if filtro_ciudad != "Todas":
             df_filtrado = df_filtrado[df_filtrado["Ciudad"] == filtro_ciudad]
-        if filtro_rubro != "Todos":
-            df_filtrado = df_filtrado[df_filtrado["Rubro"] == filtro_rubro]
-        if filtro_potencial != "Todos":
-            df_filtrado = df_filtrado[df_filtrado["Potencial"] == filtro_potencial]
 
-        m1, m2, m3, m4 = st.columns(4)
+        m1, m2, m3 = st.columns(3)
         m1.metric("Clientes filtrados", len(df_filtrado))
         m2.metric("Total clientes", len(df_clientes))
         m3.metric("Sin zona", len(df_clientes[df_clientes["Zona"].fillna("").isin(["", "Sin zona"])]))
-        m4.metric("Potencial alto", len(df_clientes[df_clientes["Potencial"] == "Alto"]))
 
         st.markdown("##### Vista filtrada")
-        columnas_vista = ["Nombre", "Contacto", "Tel", "WhatsApp", "Direccion", "Ciudad", "Provincia", "Zona", "Rubro", "Potencial", "Observaciones"]
+        columnas_vista = ["Nombre", "Contacto", "Tel", "WhatsApp", "Direccion", "Ciudad", "Provincia", "Zona", "Observaciones"]
         st.dataframe(df_filtrado[columnas_vista], use_container_width=True, hide_index=True)
 
         st.markdown("---")
         st.markdown("##### Editar base completa de clientes")
-        st.info("Desde esta tabla podés modificar teléfono, dirección, ciudad, zona, rubro, potencial y observaciones. Luego guardá los cambios.")
-        df_clientes_ed_zonas = st.data_editor(df_clientes[COLS_CLIENTES], use_container_width=True, hide_index=True, key="ed_clientes_zonas_tabla")
+        st.info("Desde esta tabla podés modificar teléfono, dirección, ciudad, zona y observaciones. En la columna Zona se abre el listado de zonas cargadas.")
+        zonas_editor = ["Sin zona"] + [
+            f"{row['Zona']} - {row['Nombre']}" for _, row in df_zonas.iterrows()
+            if str(row.get("Zona", "")).strip() and str(row.get("Nombre", "")).strip()
+        ]
+        df_clientes_ed_zonas = st.data_editor(
+            df_clientes[COLS_CLIENTES],
+            use_container_width=True,
+            hide_index=True,
+            key="ed_clientes_zonas_tabla",
+            column_config={
+                "Zona": st.column_config.SelectboxColumn(
+                    "Zona",
+                    options=zonas_editor,
+                    required=False
+                )
+            }
+        )
 
         if st.button("💾 Guardar cambios en clientes", use_container_width=True):
             df_clientes_ed_zonas.to_csv(ARCHIVO_CLIENTES, index=False)
@@ -1269,11 +1274,10 @@ with tabs[8]: # 🗺️ CLIENTES Y ZONAS
         if df_clientes.empty:
             st.info("Todavía no hay clientes cargados.")
         else:
-            e1, e2, e3, e4 = st.columns(4)
+            e1, e2, e3 = st.columns(3)
             e1.metric("Total clientes", len(df_clientes))
             e2.metric("Zonas creadas", len(df_zonas))
             e3.metric("Ciudades", df_clientes["Ciudad"].replace("", pd.NA).dropna().nunique())
-            e4.metric("Clientes sin zona", len(df_clientes[df_clientes["Zona"].fillna("").isin(["", "Sin zona"])]))
 
             col_est1, col_est2 = st.columns(2)
 
@@ -1284,24 +1288,12 @@ with tabs[8]: # 🗺️ CLIENTES Y ZONAS
                 resumen_zona = resumen_zona.groupby("Zona").size().reset_index(name="Cantidad")
                 st.dataframe(resumen_zona.sort_values("Cantidad", ascending=False), use_container_width=True, hide_index=True)
 
+            with col_est2:
                 st.markdown("##### Clientes por ciudad")
                 resumen_ciudad = df_clientes.copy()
                 resumen_ciudad["Ciudad"] = resumen_ciudad["Ciudad"].replace("", "Sin ciudad").fillna("Sin ciudad")
                 resumen_ciudad = resumen_ciudad.groupby("Ciudad").size().reset_index(name="Cantidad")
                 st.dataframe(resumen_ciudad.sort_values("Cantidad", ascending=False), use_container_width=True, hide_index=True)
-
-            with col_est2:
-                st.markdown("##### Clientes por rubro")
-                resumen_rubro_cli = df_clientes.copy()
-                resumen_rubro_cli["Rubro"] = resumen_rubro_cli["Rubro"].replace("", "Sin rubro").fillna("Sin rubro")
-                resumen_rubro_cli = resumen_rubro_cli.groupby("Rubro").size().reset_index(name="Cantidad")
-                st.dataframe(resumen_rubro_cli.sort_values("Cantidad", ascending=False), use_container_width=True, hide_index=True)
-
-                st.markdown("##### Clientes por potencial")
-                resumen_potencial = df_clientes.copy()
-                resumen_potencial["Potencial"] = resumen_potencial["Potencial"].replace("", "Sin definir").fillna("Sin definir")
-                resumen_potencial = resumen_potencial.groupby("Potencial").size().reset_index(name="Cantidad")
-                st.dataframe(resumen_potencial.sort_values("Cantidad", ascending=False), use_container_width=True, hide_index=True)
 
 
 with tabs[9]: # 💵 COBRANZAS
