@@ -1350,7 +1350,12 @@ with tabs[9]: # 💵 COBRANZAS
                 zona_cliente = ciudad_valor
 
         with c2:
-            st.text_input("Zona:", value=zona_cliente, disabled=True, key="zona_cobranza_visible")
+            st.text_input(
+                "Zona:",
+                value=zona_cliente,
+                disabled=True,
+                key=f"zona_cobranza_visible_{cliente_cobranza}"
+            )
 
         with c3:
             monto_cobrado = st.number_input("Monto cobrado:", min_value=0.0, format="%.2f", key="monto_cobranza")
