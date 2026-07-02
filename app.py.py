@@ -17,7 +17,6 @@ ARCHIVO_ARTICULOS = "data/lista_articulos_interna.csv"
 ARCHIVO_CLIENTES = "data/clientes_base.csv"
 ARCHIVO_MOVIMIENTOS = "data/movimientos_clientes.csv"
 ARCHIVO_COBRANZAS = "data/cobranzas_base.csv"
-ARCHIVO_VIAJES = "data/control_viajes.csv"
 ARCHIVO_ZONAS = "data/zonas_base.csv"
 CARPETA_FOTOS = "data/fotos_productos"
 WHATSAPP_NUM = "5493413512049"
@@ -54,14 +53,12 @@ COLS_CLIENTES = ["Nombre", "Contacto", "Tel", "WhatsApp", "Direccion", "Ciudad",
 COLS_MOVS = ["Fecha", "Cliente", "Tipo", "Monto", "Metodo", "Detalle"]
 COLS_COBRANZAS = ["Fecha", "Vendedor", "Cliente", "Zona", "Monto Cobrado", "Forma de Pago", "Estado", "Observaciones"]
 COLS_ZONAS = ["Zona", "Nombre"]
-COLS_VIAJES = ["Fecha", "Viajante", "Zona / Ruta", "Observaciones", "Rubro", "Articulo", "Cantidad", "Precio Lista 2", "Subtotal"]
 
 df_stock = cargar_datos(ARCHIVO_ARTICULOS, COLS_ARTICULOS)
 df_clientes = cargar_datos(ARCHIVO_CLIENTES, COLS_CLIENTES)
 df_movs = cargar_datos(ARCHIVO_MOVIMIENTOS, COLS_MOVS)
 df_cobranzas = cargar_datos(ARCHIVO_COBRANZAS, COLS_COBRANZAS)
 df_zonas = cargar_datos(ARCHIVO_ZONAS, COLS_ZONAS)
-df_viajes = cargar_datos(ARCHIVO_VIAJES, COLS_VIAJES)
 
 # --- ESTADOS DE SESIÓN ---
 if "carrito" not in st.session_state: st.session_state.carrito = []
@@ -269,70 +266,8 @@ def generar_pdf_cobranzas(df_reporte, fecha_reporte, vendedor_reporte, total_cob
     except Exception:
         return b""
 
-
-def generar_pdf_control_viaje(df_reporte, fecha_reporte, viajante, zona_ruta, observaciones, total_general):
-    try:
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_auto_page_break(auto=True, margin=15)
-
-        # --- ENCABEZADO ---
-        pdf.set_font("Arial", "B", 16)
-        pdf.cell(0, 10, "AF ACCESORIOS - ALUMINIO", ln=True, align="C")
-        pdf.set_font("Arial", "", 10)
-        pdf.cell(0, 5, "Casilda, Santa Fe | WhatsApp: +54 9 341 351-2049", ln=True, align="C")
-        pdf.ln(8)
-
-        pdf.set_fill_color(240, 240, 240)
-        pdf.set_font("Arial", "B", 12)
-        pdf.cell(0, 8, " CONTROL DE VIAJE / MERCADERIA", border=1, ln=True, fill=True)
-        pdf.ln(4)
-
-        pdf.set_font("Arial", "", 10)
-        pdf.cell(95, 8, f" Fecha: {fecha_reporte}", border=1)
-        pdf.cell(95, 8, f" Viajante: {viajante}", border=1, ln=True)
-        pdf.cell(190, 8, f" Zona / Ruta: {zona_ruta}", border=1, ln=True)
-        if str(observaciones).strip():
-            pdf.multi_cell(190, 7, f" Observaciones: {str(observaciones)[:180]}", border=1)
-        pdf.ln(6)
-
-        # --- TABLA ---
-        pdf.set_fill_color(200, 200, 200)
-        pdf.set_font("Arial", "B", 9)
-        pdf.cell(85, 8, " Articulo", 1, 0, "L", fill=True)
-        pdf.cell(20, 8, " Cant.", 1, 0, "C", fill=True)
-        pdf.cell(35, 8, " Lista 2", 1, 0, "R", fill=True)
-        pdf.cell(40, 8, " Subtotal", 1, 1, "R", fill=True)
-
-        pdf.set_font("Arial", "", 8)
-        for _, row in df_reporte.iterrows():
-            articulo = str(row.get("Articulo", ""))[:45]
-            cantidad = int(float(row.get("Cantidad", 0)))
-            precio = float(row.get("Precio Lista 2", 0))
-            subtotal = float(row.get("Subtotal", 0))
-
-            pdf.cell(85, 8, f" {articulo}", 1)
-            pdf.cell(20, 8, str(cantidad), 1, 0, "C")
-            pdf.cell(35, 8, formatear_moneda(precio), 1, 0, "R")
-            pdf.cell(40, 8, formatear_moneda(subtotal), 1, 1, "R")
-
-        pdf.ln(6)
-        pdf.set_font("Arial", "B", 12)
-        pdf.cell(140, 10, "VALOR TOTAL DE MERCADERIA: ", 0, 0, "R")
-        pdf.cell(40, 10, formatear_moneda(total_general), 1, 1, "R")
-
-        pdf.ln(10)
-        pdf.set_font("Arial", "", 9)
-        pdf.cell(90, 8, "Firma entrega: ______________________", 0, 0, "L")
-        pdf.cell(90, 8, "Firma recibe: ______________________", 0, 1, "R")
-
-        res = pdf.output(dest='S')
-        return bytes(res) if not isinstance(res, str) else res.encode('latin-1', 'replace')
-    except Exception:
-        return b""
-
 # --- INTERFAZ PRINCIPAL ---
-tabs = st.tabs(["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre", "📦 Remitos", "🗺️ Clientes y Zonas", "🚚 Control de Viaje", "💵 Cobranzas"])
+tabs = st.tabs(["📊 Stock", "🚚 Lote", "⚙️ Maestro", "👥 Cta Cte", "📄 Presupuestador", "📋 Órdenes", "🏁 Cierre", "📦 Remitos", "🗺️ Clientes y Zonas", "💵 Cobranzas"])
 
 with tabs[0]: # STOCK
     st.header("Inventario Actual")
@@ -1361,185 +1296,7 @@ with tabs[8]: # 🗺️ CLIENTES Y ZONAS
                 st.dataframe(resumen_ciudad.sort_values("Cantidad", ascending=False), use_container_width=True, hide_index=True)
 
 
-
-with tabs[9]: # 🚚 CONTROL DE VIAJE
-    st.header("🚚 Control de Viaje / Mercadería")
-    st.caption("Listado valorizado de la mercadería que lleva cada viajante. No descuenta stock automáticamente.")
-
-    # --- ESTADOS TEMPORALES ---
-    if "viaje_guardado" not in st.session_state:
-        st.session_state.viaje_guardado = False
-    if "ultimo_viaje_df" not in st.session_state:
-        st.session_state.ultimo_viaje_df = pd.DataFrame(columns=COLS_VIAJES)
-    if "ultimo_viaje_fecha" not in st.session_state:
-        st.session_state.ultimo_viaje_fecha = ""
-    if "ultimo_viaje_viajante" not in st.session_state:
-        st.session_state.ultimo_viaje_viajante = ""
-    if "ultimo_viaje_zona" not in st.session_state:
-        st.session_state.ultimo_viaje_zona = ""
-    if "ultimo_viaje_obs" not in st.session_state:
-        st.session_state.ultimo_viaje_obs = ""
-
-    st.subheader("Datos del viaje")
-    v1, v2, v3 = st.columns(3)
-
-    with v1:
-        fecha_viaje = st.date_input("Fecha:", datetime.now(), key="fecha_control_viaje")
-    with v2:
-        viajante = st.text_input("Viajante:", key="viajante_control_viaje")
-    with v3:
-        zonas_viaje = ["Sin zona"] + [
-            f"{row['Zona']} - {row['Nombre']}" for _, row in df_zonas.iterrows()
-            if str(row.get("Zona", "")).strip() and str(row.get("Nombre", "")).strip()
-        ]
-        zona_ruta = st.selectbox("Zona / Ruta:", zonas_viaje, key="zona_control_viaje")
-
-    observaciones_viaje = st.text_area("Observaciones del viaje:", key="obs_control_viaje")
-
-    st.markdown("---")
-    st.subheader("Seleccionar mercadería")
-
-    if not df_stock.empty:
-        df_carga = df_stock[["Rubro", "Accesorio", "Stock", "Lista 2 (Efectivo)"]].copy()
-        df_carga["Cantidad a llevar"] = 0
-
-        rubros_viaje = ["Todos"] + sorted([x for x in df_carga["Rubro"].dropna().astype(str).unique().tolist() if x.strip()])
-        filtro_rubro_viaje = st.selectbox("Filtrar por rubro:", rubros_viaje, key="filtro_rubro_control_viaje")
-
-        if filtro_rubro_viaje != "Todos":
-            df_carga = df_carga[df_carga["Rubro"] == filtro_rubro_viaje].copy()
-
-        st.info("Completá únicamente la columna **Cantidad a llevar**. El precio utilizado es siempre **Lista 2 (Efectivo)**.")
-
-        df_carga_ed = st.data_editor(
-            df_carga,
-            use_container_width=True,
-            hide_index=True,
-            key="editor_control_viaje",
-            disabled=["Rubro", "Accesorio", "Stock", "Lista 2 (Efectivo)"],
-            column_config={
-                "Cantidad a llevar": st.column_config.NumberColumn(
-                    "Cantidad a llevar",
-                    min_value=0,
-                    step=1,
-                    format="%d"
-                )
-            }
-        )
-
-        df_carga_ed["Cantidad a llevar"] = pd.to_numeric(df_carga_ed["Cantidad a llevar"], errors="coerce").fillna(0)
-        df_carga_ed["Lista 2 (Efectivo)"] = pd.to_numeric(df_carga_ed["Lista 2 (Efectivo)"], errors="coerce").fillna(0)
-
-        df_seleccion = df_carga_ed[df_carga_ed["Cantidad a llevar"] > 0].copy()
-
-        if not df_seleccion.empty:
-            df_seleccion["Subtotal"] = df_seleccion["Cantidad a llevar"] * df_seleccion["Lista 2 (Efectivo)"]
-
-            total_unidades = int(df_seleccion["Cantidad a llevar"].sum())
-            total_articulos = len(df_seleccion)
-            total_valor = float(df_seleccion["Subtotal"].sum())
-
-            st.markdown("---")
-            st.subheader("Resumen del viaje")
-
-            s1, s2, s3 = st.columns(3)
-            s1.metric("Artículos cargados", total_articulos)
-            s2.metric("Unidades totales", total_unidades)
-            s3.metric("Valor total", formatear_moneda(total_valor))
-
-            vista_resumen = df_seleccion.rename(columns={
-                "Accesorio": "Artículo",
-                "Lista 2 (Efectivo)": "Precio Lista 2",
-                "Cantidad a llevar": "Cantidad"
-            })[["Rubro", "Artículo", "Cantidad", "Precio Lista 2", "Subtotal"]].copy()
-
-            vista_resumen["Precio Lista 2"] = vista_resumen["Precio Lista 2"].apply(formatear_moneda)
-            vista_resumen["Subtotal"] = vista_resumen["Subtotal"].apply(formatear_moneda)
-
-            st.dataframe(vista_resumen, use_container_width=True, hide_index=True)
-
-            b1, b2 = st.columns(2)
-
-            with b1:
-                if st.button("🗑️ Limpiar carga", use_container_width=True):
-                    if "editor_control_viaje" in st.session_state:
-                        del st.session_state["editor_control_viaje"]
-                    st.session_state.viaje_guardado = False
-                    st.rerun()
-
-            with b2:
-                if st.button("✅ Finalizar viaje y generar PDF", use_container_width=True, type="primary"):
-                    if viajante.strip() == "":
-                        st.error("Ingresá el nombre del viajante.")
-                    else:
-                        df_guardar_viaje = pd.DataFrame({
-                            "Fecha": fecha_viaje.strftime("%d/%m/%Y"),
-                            "Viajante": viajante.strip(),
-                            "Zona / Ruta": zona_ruta,
-                            "Observaciones": observaciones_viaje,
-                            "Rubro": df_seleccion["Rubro"],
-                            "Articulo": df_seleccion["Accesorio"],
-                            "Cantidad": df_seleccion["Cantidad a llevar"].astype(int),
-                            "Precio Lista 2": df_seleccion["Lista 2 (Efectivo)"],
-                            "Subtotal": df_seleccion["Subtotal"]
-                        })
-
-                        df_viajes = pd.concat([df_viajes, df_guardar_viaje], ignore_index=True)
-                        df_viajes.to_csv(ARCHIVO_VIAJES, index=False)
-
-                        st.session_state.ultimo_viaje_df = df_guardar_viaje
-                        st.session_state.ultimo_viaje_fecha = fecha_viaje.strftime("%d/%m/%Y")
-                        st.session_state.ultimo_viaje_viajante = viajante.strip()
-                        st.session_state.ultimo_viaje_zona = zona_ruta
-                        st.session_state.ultimo_viaje_obs = observaciones_viaje
-                        st.session_state.viaje_guardado = True
-
-                        st.success("Control de viaje guardado correctamente.")
-                        st.rerun()
-        else:
-            st.info("Todavía no hay mercadería seleccionada. Ingresá cantidades en la columna **Cantidad a llevar**.")
-    else:
-        st.warning("Primero tenés que cargar artículos en el stock.")
-
-    # --- DESCARGA PDF DESPUÉS DE GUARDAR ---
-    if st.session_state.get("viaje_guardado", False) and not st.session_state.ultimo_viaje_df.empty:
-        st.markdown("---")
-        with st.container(border=True):
-            st.success("El control de viaje fue guardado. Ya podés descargar el PDF.")
-
-            total_pdf_viaje = float(st.session_state.ultimo_viaje_df["Subtotal"].sum())
-
-            pdf_viaje = generar_pdf_control_viaje(
-                st.session_state.ultimo_viaje_df,
-                st.session_state.ultimo_viaje_fecha,
-                st.session_state.ultimo_viaje_viajante,
-                st.session_state.ultimo_viaje_zona,
-                st.session_state.ultimo_viaje_obs,
-                total_pdf_viaje
-            )
-
-            st.download_button(
-                label="🖨️ Descargar PDF del control de viaje",
-                data=pdf_viaje,
-                file_name=f"Control_Viaje_{st.session_state.ultimo_viaje_fecha.replace('/', '-')}_{st.session_state.ultimo_viaje_viajante.replace(' ', '_')}.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-                key="btn_pdf_control_viaje"
-            )
-
-            if st.button("🔄 Cerrar control y empezar otro", use_container_width=True):
-                st.session_state.viaje_guardado = False
-                st.session_state.ultimo_viaje_df = pd.DataFrame(columns=COLS_VIAJES)
-                st.session_state.ultimo_viaje_fecha = ""
-                st.session_state.ultimo_viaje_viajante = ""
-                st.session_state.ultimo_viaje_zona = ""
-                st.session_state.ultimo_viaje_obs = ""
-                if "editor_control_viaje" in st.session_state:
-                    del st.session_state["editor_control_viaje"]
-                st.rerun()
-
-
-with tabs[10]: # 💵 COBRANZAS
+with tabs[9]: # 💵 COBRANZAS
     st.header("💵 Registro de Cobranzas")
 
     if "vuelta_cobranzas" not in st.session_state:
@@ -1572,11 +1329,25 @@ with tabs[10]: # 💵 COBRANZAS
             cliente_cobranza = st.selectbox("Cliente:", df_clientes["Nombre"].tolist(), key="cliente_cobranza")
 
         datos_cliente_cob = df_clientes[df_clientes["Nombre"] == cliente_cobranza]
+
         zona_cliente = "Sin zona"
+
         if not datos_cliente_cob.empty:
-            zona_valor = str(datos_cliente_cob["Zona"].values[0]).strip() if "Zona" in datos_cliente_cob.columns else ""
-            ciudad_valor = str(datos_cliente_cob["Ciudad"].values[0]).strip() if "Ciudad" in datos_cliente_cob.columns else ""
-            zona_cliente = zona_valor if zona_valor else (ciudad_valor if ciudad_valor else "Sin zona")
+            zona_valor = datos_cliente_cob.iloc[0]["Zona"] if "Zona" in datos_cliente_cob.columns else ""
+            ciudad_valor = datos_cliente_cob.iloc[0]["Ciudad"] if "Ciudad" in datos_cliente_cob.columns else ""
+
+            if pd.isna(zona_valor):
+                zona_valor = ""
+            if pd.isna(ciudad_valor):
+                ciudad_valor = ""
+
+            zona_valor = str(zona_valor).strip()
+            ciudad_valor = str(ciudad_valor).strip()
+
+            if zona_valor and zona_valor.lower() != "nan":
+                zona_cliente = zona_valor
+            elif ciudad_valor and ciudad_valor.lower() != "nan":
+                zona_cliente = ciudad_valor
 
         with c2:
             st.text_input("Zona:", value=zona_cliente, disabled=True, key="zona_cobranza_visible")
